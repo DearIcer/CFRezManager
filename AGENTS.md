@@ -58,7 +58,8 @@ CLI invocations switch `ShutdownMode` to `OnExplicitShutdown` and return an exit
   - `Images/` DTX, TGA, DDS decoders and `DecodedImageExporter` (decodable images → PNG export).
   - `LithTech/` LTC native decoder, SPR sprites, world DAT; `LithTech/Models/` model decoding, part grouping, scene building, texture resolution (CFG index + DAT reference index), OBJ/MTL export, thumbnail rendering.
   - `Audio/`, `Fmod/` (FMOD `.bank` + embedded FSB5), `Config/` (CFG text/binary-strip), `Text/`.
-- `Preview/` — standalone preview windows: `Audio/` (player with track list, spectrum, FMOD bank progressive loading), `Image/`, `Model/` (free-fly 3D camera), `Text/`.
+- `Preview/` — standalone preview windows: `Audio/` (player with track list, spectrum, FMOD bank progressive loading), `Image/`, `Model/` (Unity viewer embedding), `Text/`.
+  - `Model/` hosts the model preview in an embedded Unity player process instead of WPF 3D: `UnityPreviewExporter` exports the decoded `LithTechModelDocument` to a temp OBJ/MTL/PNG set (via `LithTechObjExporter`) under `%TEMP%\CFRezManager\UnityPreview\<guid>\`, `UnityViewerHost` (`HwndHost`) launches the Unity exe with `-parentHWND` and forwards resize/focus, `UnityViewerLocator` resolves the exe. The Unity project lives outside this repo (currently `E:\UnityProject\RezView`, Unity 2022.3 + URP); its runtime scripts parse `--cfrez-model <path>` and load the OBJ with a free-fly camera. Build output goes to `tools\UnityModelViewer\CFRezModelViewer.exe`.
 - `UI/` — `MainWindow` (browser, search index, export, repack), `SettingsWindow`, `ExportOptionsWindow` (per-format image export choice), `VirtualizingWrapPanel`.
 - `App/` — startup glue: `UserSettings` (JSON at `%LocalAppData%\CFRezManager\settings.json`), `LocalizedText` (zh/en), `ThemeManager`/`AppTheme`, `WindowThemeHelper` (native title bar), `ImageExportOptions`.
 
@@ -83,6 +84,7 @@ Decoders prefer built-in paths and fall back to external executables found besid
 - `CFREZ_LTC_TO_LTA` → external LTC→LTA converter (fallback after built-in LTC decode).
 - `CFREZ_MODEL_UNPACKER` / `tools\Model_Unpacker.exe` → LTB model conversion fallback.
 - `tools\vgmstream\vgmstream-cli.exe` → FSB5 streams the built-in `Fmod5Sharp` path cannot decode.
+- `CFREZ_UNITY_VIEWER` / `tools\UnityModelViewer\CFRezModelViewer.exe` → Unity model preview viewer (required for model preview; no built-in fallback).
 
 External process calls have timeouts and best-effort temp-file cleanup — preserve that pattern.
 
@@ -97,4 +99,4 @@ External process calls have timeouts and best-effort temp-file cleanup — prese
 - This tool parses untrusted binary game assets: keep all length/offset bounds checks intact, honor the existing maximum-decoded-size protections in the LZMA paths, and never execute decoded content.
 - `RezCrypto.Keys` is a public, widely documented LithTech key table baked into the format — not a secret to protect.
 - Do not read, commit, or transmit local game asset folders (`Pak-CF/`, `Extracted/`, `Output/`) or `tools_downloads/` — they are gitignored for a reason.
-- The app writes only to user-chosen export paths, `%LocalAppData%\CFRezManager\settings.json`, and `ThumbnailCache\` / `RezIndexCache\v1\` folders next to the executable; keep new side effects within those locations.
+- The app writes only to user-chosen export paths, `%LocalAppData%\CFRezManager\settings.json`, `ThumbnailCache\` / `RezIndexCache\v1\` folders next to the executable, and the `%TEMP%\CFRezManager\UnityPreview\` temp folder (per-preview OBJ data, deleted on window close and swept on startup); keep new side effects within those locations.

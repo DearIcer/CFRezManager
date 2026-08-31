@@ -99,7 +99,7 @@ CFRezManager/
 - 图片和纹理：PNG、JPG、BMP、GIF、TIFF、DDS、TGA、DTX、CrossFire 图片 BIN，支持原始尺寸预览和上一张/下一张切换。
 - 压缩资源：支持常见 LZMA 外壳资源，缩略图角标会标出 `RAW`、`LZMA`、`DXT`、`TXT` 等状态。
 - 音频：WAV、OGG、MP3 和 FMOD `.bank`，支持波形缩略图、曲目列表、播放控制、进度拖动和动态频谱；OGG/MP3 预览会解码为 PCM 后生成频谱，让普通音频和 FMOD BANK 的波形表现更一致。
-- 模型和地图：LTC、LTB、LTA、DAT、SPR，可生成缩略图并打开独立预览窗口；SPR 可自动播放动画帧。
+- 模型和地图：LTC、LTB、LTA、DAT、SPR，可生成缩略图并打开独立预览窗口；SPR 可自动播放动画帧。模型预览窗口内嵌一个 Unity 查看器进程（URP 渲染），需要把 Unity 构建产物放在程序目录的 `tools\UnityModelViewer\` 下（或设置 `CFREZ_UNITY_VIEWER` 环境变量指向 exe）。
 - 文本和配置：CFT、FCF、FXF、FXO、NAV、APF、REF、TXT、部分 WAVE 资源、CrossFire UI 脚本 `.bin`、CFG。
 - CFG 批处理：可扫描贴图引用，支持普通/LZMA/ENC/REZ phase 文本 CFG 解码，分类失败解码结果，并为二进制 RGB 条带型 CFG 生成预览。
 
@@ -107,13 +107,15 @@ CFRezManager/
 
 ## 模型预览操作
 
+模型预览窗口内嵌 Unity 查看器（首次打开需要 1–3 秒启动时间）。
+
 - 鼠标左键点击模型窗口：进入自由视角。
 - 鼠标移动：调整视角方向。
 - `W` / `A` / `S` / `D`：前后左右移动。
 - `Shift`：加速移动。
 - 鼠标滚轮：沿当前视线方向前进或后退。
 - 鼠标右键或 `Esc`：退出自由视角。
-- `Reset View`：重置相机位置和方向。
+- `R`：重置相机位置和方向。
 
 ## 解包资源
 

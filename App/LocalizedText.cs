@@ -22,6 +22,12 @@ internal static class LocalizedText
             ["PreviewPlay"] = ("\u64ad\u653e", "Play"),
             ["PreviewFrame"] = ("\u5e27", "Frame"),
 
+            ["UnityViewerMissing"] = ("未找到 Unity 模型查看器。请把 CFRezModelViewer.exe 构建到程序目录的 tools\\UnityModelViewer\\ 文件夹，或设置 CFREZ_UNITY_VIEWER 环境变量。", "Unity model viewer not found. Build CFRezModelViewer.exe into the tools\\UnityModelViewer\\ folder next to the program, or set the CFREZ_UNITY_VIEWER environment variable."),
+            ["UnityViewerExportFailed"] = ("模型临时数据导出失败，无法启动 Unity 预览。", "Failed to export temporary model data for the Unity preview."),
+            ["UnityViewerLoading"] = ("正在启动 Unity 查看器…", "Starting the Unity viewer…"),
+            ["UnityViewerFailed"] = ("Unity 查看器启动失败: {0}", "Unity viewer failed to start: {0}"),
+            ["ModelPreviewShortcutHint"] = ("左键/WASD 自由观察 · 右键/Esc 退出 · 滚轮 前进/后退 · R 重置视角", "Left button/WASD free look · Right button/Esc release · Wheel move · R reset view"),
+
             ["ModelOuterCompressionFailed"] = ("无法解开模型外层压缩。", "Could not decompress the model wrapper."),
             ["ModelLtcNotRecognized"] = ("LTC 不是可直接识别的 LTA 文本/压缩文本，也未能用内置 LTC 解码器还原为 LTA。可配置 CFREZ_LTC_TO_LTA 作为外部兜底。", "The LTC is not directly recognizable LTA text/compressed text, and the built-in LTC decoder could not restore it to LTA. Configure CFREZ_LTC_TO_LTA as an external fallback."),
             ["LtbTooShort"] = ("LTB 文件太短，无法读取文件头。", "The LTB file is too short to read the header."),

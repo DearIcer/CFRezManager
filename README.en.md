@@ -99,7 +99,7 @@ Common right-click actions:
 - Images and textures: PNG, JPG, BMP, GIF, TIFF, DDS, TGA, DTX, CrossFire image BIN, original-size preview, and previous/next navigation.
 - Compressed resources: common LZMA-wrapped resources, with thumbnail badges such as `RAW`, `LZMA`, `DXT`, and `TXT`.
 - Audio: WAV, OGG, MP3, and FMOD `.bank`, with waveform thumbnails, track list, playback controls, seeking, and dynamic spectrum display. OGG/MP3 previews decode to PCM before spectrum rendering so normal audio files behave more like FMOD BANK streams.
-- Models and maps: LTC, LTB, LTA, DAT, and SPR, with thumbnails and standalone preview windows; SPR can autoplay animation frames.
+- Models and maps: LTC, LTB, LTA, DAT, and SPR, with thumbnails and standalone preview windows; SPR can autoplay animation frames. The model preview window embeds a Unity viewer process (URP rendering); place the Unity build output in `tools\UnityModelViewer\` next to the program (or point the `CFREZ_UNITY_VIEWER` environment variable at the exe).
 - Text and config resources: CFT, FCF, FXF, FXO, NAV, APF, REF, TXT, selected WAVE resources, CrossFire UI script `.bin`, and CFG.
 - CFG batch work: scan texture references, decode plain/LZMA/ENC/REZ-phase text CFG files, classify failed decodes, and render previews for binary RGB-strip CFG files.
 
@@ -107,13 +107,15 @@ Generated thumbnails are cached in the `ThumbnailCache` folder under the program
 
 ## Model Preview Controls
 
+The model preview window embeds a Unity viewer (allow 1–3 seconds for the first launch).
+
 - Left-click the model viewport: enter free-look mode.
 - Move the mouse: adjust the view direction.
 - `W` / `A` / `S` / `D`: move forward, left, backward, and right.
 - `Shift`: move faster.
 - Mouse wheel: move forward or backward along the current view direction.
 - Right-click or `Esc`: leave free-look mode.
-- `Reset View`: reset the camera position and direction.
+- `R`: reset the camera position and direction.
 
 ## Extract Resources
 

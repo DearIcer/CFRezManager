@@ -7,6 +7,7 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
 
         ShutdownMode = System.Windows.ShutdownMode.OnMainWindowClose;
+        UnityPreviewExporter.CleanupStaleDirectories();
         if (LithTechObjExportCommand.IsInvocation(e.Args))
         {
             ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;

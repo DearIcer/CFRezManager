@@ -10,6 +10,7 @@ CF Rez Manager is a Windows WPF tool for browsing, searching, previewing, extrac
 ## What It Does
 
 - Browse `.rez` archives, internal REZ folders, and normal resource folders.
+- Support multi-volume archives (e.g. `rf017.rez` together with `rf017_1.rez`, `rf017_2.rez`, ...) as a single archive for browsing and exporting.
 - Search files, folders, and internal REZ paths with multi-keyword filtering.
 - Export all resources, or only selected files, folders, and REZ entries.
 - Pack a normal Windows folder into a new `.rez` archive.

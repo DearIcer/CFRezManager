@@ -1557,8 +1557,7 @@ public sealed class ExplorerItem : INotifyPropertyChanged
         }
 
         byte[] data = new byte[ArchiveFile.Size];
-        using FileStream source = File.OpenRead(Archive.FilePath);
-        source.Position = ArchiveFile.DataOffset;
+        using Stream source = RezArchiveReader.OpenFileData(Archive, ArchiveFile);
         source.ReadExactly(data);
         return data;
     }
@@ -1594,8 +1593,7 @@ public sealed class ExplorerItem : INotifyPropertyChanged
 
         int archiveByteCount = checked((int)Math.Min(Math.Min(ArchiveFile.Size, maxBytes), int.MaxValue));
         byte[] archiveData = new byte[archiveByteCount];
-        using FileStream archiveSource = File.OpenRead(Archive.FilePath);
-        archiveSource.Position = ArchiveFile.DataOffset;
+        using Stream archiveSource = RezArchiveReader.OpenFileData(Archive, ArchiveFile);
         archiveSource.ReadExactly(archiveData);
         return archiveData;
     }
@@ -1633,8 +1631,7 @@ public sealed class ExplorerItem : INotifyPropertyChanged
             return null;
         }
 
-        using FileStream archiveSource = File.OpenRead(Archive.FilePath);
-        archiveSource.Position = ArchiveFile.DataOffset;
+        using Stream archiveSource = RezArchiveReader.OpenFileData(Archive, ArchiveFile);
         return LzmaAloneDecoder.TryDecompressPrefix(archiveSource, ArchiveFile.Size, maxDecodedBytes);
     }
 

@@ -1463,9 +1463,7 @@ public partial class MainWindow : Window
             throw new InvalidOperationException(LocalizedText.Format("PreviewFileTooLarge", item.Name));
         }
 
-        FileStream archiveSource = File.OpenRead(item.Archive.FilePath);
-        archiveSource.Position = item.ArchiveFile.DataOffset;
-        return archiveSource;
+        return RezArchiveReader.OpenFileData(item.Archive, item.ArchiveFile);
     }
 
     private static bool ReadBankAudioSessionTo(BankAudioStreamSession session, int targetDecodedBytes)
@@ -2291,8 +2289,7 @@ public partial class MainWindow : Window
         }
 
         byte[] data = new byte[item.ArchiveFile.Size];
-        using FileStream source = File.OpenRead(item.Archive.FilePath);
-        source.Position = item.ArchiveFile.DataOffset;
+        using Stream source = RezArchiveReader.OpenFileData(item.Archive, item.ArchiveFile);
         source.ReadExactly(data);
         return data;
     }
@@ -2328,8 +2325,7 @@ public partial class MainWindow : Window
 
         int archiveByteCount = checked((int)Math.Min(Math.Min(item.ArchiveFile.Size, maxBytes), int.MaxValue));
         byte[] archiveData = new byte[archiveByteCount];
-        using FileStream archiveSource = File.OpenRead(item.Archive.FilePath);
-        archiveSource.Position = item.ArchiveFile.DataOffset;
+        using Stream archiveSource = RezArchiveReader.OpenFileData(item.Archive, item.ArchiveFile);
         archiveSource.ReadExactly(archiveData);
         return archiveData;
     }
@@ -3636,6 +3632,7 @@ public partial class MainWindow : Window
         {
             return Directory.EnumerateFiles(folder)
                 .Where(file => string.Equals(Path.GetExtension(file), ".rez", StringComparison.OrdinalIgnoreCase))
+                .Where(file => !RezArchiveReader.IsContinuationVolume(file))
                 .ToList();
         }
         catch

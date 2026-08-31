@@ -7,7 +7,7 @@ namespace CFRezManager;
 
 internal static class RezArchiveDirectoryCache
 {
-    private const int CacheVersion = 1;
+    private const int CacheVersion = 3;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
@@ -44,13 +44,14 @@ internal static class RezArchiveDirectoryCache
                 cacheFile.SourceLength != sourceInfo.Length ||
                 cacheFile.SourceLastWriteTimeUtcTicks != sourceInfo.LastWriteTimeUtc.Ticks ||
                 cacheFile.Header is null ||
-                cacheFile.Root is null)
+                cacheFile.Root is null ||
+                !VolumesMatch(cacheFile.Volumes))
             {
                 return false;
             }
 
             RezDirectoryNode root = RestoreDirectory(cacheFile.Root);
-            archive = new RezArchive(sourceInfo.FullName, RestoreHeader(cacheFile.Header), root)
+            archive = new RezArchive(sourceInfo.FullName, RestoreHeader(cacheFile.Header), root, cacheFile.Volumes)
             {
                 DirectoryCount = cacheFile.DirectoryCount,
                 FileCount = cacheFile.FileCount
@@ -83,6 +84,7 @@ internal static class RezArchiveDirectoryCache
                 SourcePath = sourceInfo.FullName,
                 SourceLength = sourceInfo.Length,
                 SourceLastWriteTimeUtcTicks = sourceInfo.LastWriteTimeUtc.Ticks,
+                Volumes = archive.VolumePaths.ToList(),
                 Header = StoreHeader(archive.Header),
                 Root = StoreDirectory(archive.Root),
                 DirectoryCount = archive.DirectoryCount,
@@ -96,6 +98,16 @@ internal static class RezArchiveDirectoryCache
         catch
         {
         }
+    }
+
+    private static bool VolumesMatch(List<string>? volumes)
+    {
+        if (volumes is null || volumes.Count == 0)
+        {
+            return false;
+        }
+
+        return volumes.All(File.Exists);
     }
 
     private static string GetCachePath(string sourcePath)
@@ -167,7 +179,8 @@ internal static class RezArchiveDirectoryCache
                     child.Size,
                     child.Time,
                     child.Id,
-                    child.Md5 ?? string.Empty));
+                    child.Md5 ?? string.Empty,
+                    child.VolumeIndex));
             }
         }
 
@@ -205,7 +218,8 @@ internal static class RezArchiveDirectoryCache
             Size = file.Size,
             Time = file.Time,
             Id = file.Id,
-            Md5 = file.Md5
+            Md5 = file.Md5,
+            VolumeIndex = file.VolumeIndex
         };
     }
 
@@ -215,6 +229,7 @@ internal static class RezArchiveDirectoryCache
         public string SourcePath { get; set; } = string.Empty;
         public long SourceLength { get; set; }
         public long SourceLastWriteTimeUtcTicks { get; set; }
+        public List<string>? Volumes { get; set; }
         public RezHeaderCacheModel? Header { get; set; }
         public RezNodeCacheModel? Root { get; set; }
         public int DirectoryCount { get; set; }
@@ -251,6 +266,7 @@ internal static class RezArchiveDirectoryCache
         public int Time { get; set; }
         public int Id { get; set; }
         public string? Md5 { get; set; }
+        public int VolumeIndex { get; set; }
         public List<RezNodeCacheModel>? Children { get; set; }
     }
 }

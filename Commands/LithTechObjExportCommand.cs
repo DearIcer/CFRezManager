@@ -445,6 +445,7 @@ internal static class LithTechObjExportCommand
         {
             return Directory.EnumerateFiles(folder)
                 .Where(file => string.Equals(Path.GetExtension(file), ".rez", StringComparison.OrdinalIgnoreCase))
+                .Where(file => !RezArchiveReader.IsContinuationVolume(file))
                 .ToList();
         }
         catch
@@ -710,8 +711,7 @@ internal static class LithTechObjExportCommand
         }
 
         byte[] data = new byte[item.ArchiveFile.Size];
-        using FileStream source = File.OpenRead(item.Archive.FilePath);
-        source.Position = item.ArchiveFile.DataOffset;
+        using Stream source = RezArchiveReader.OpenFileData(item.Archive, item.ArchiveFile);
         source.ReadExactly(data);
         return data;
     }

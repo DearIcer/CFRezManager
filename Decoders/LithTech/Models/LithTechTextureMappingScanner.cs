@@ -1515,8 +1515,7 @@ internal static class LithTechTextureMappingScanner
                 item.ArchiveFile.Size <= maxBytes)
             {
                 byte[] data = new byte[item.ArchiveFile.Size];
-                using FileStream source = File.OpenRead(item.Archive.FilePath);
-                source.Position = item.ArchiveFile.DataOffset;
+                using Stream source = RezArchiveReader.OpenFileData(item.Archive, item.ArchiveFile);
                 source.ReadExactly(data);
                 return data;
             }

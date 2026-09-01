@@ -22,6 +22,12 @@ internal static class LocalizedText
             ["PreviewPlay"] = ("\u64ad\u653e", "Play"),
             ["PreviewFrame"] = ("\u5e27", "Frame"),
 
+            ["PreviewChannelRgb"] = ("彩色 (RGB)", "Color (RGB)"),
+            ["PreviewChannelRed"] = ("红 (R)", "Red (R)"),
+            ["PreviewChannelGreen"] = ("绿 (G)", "Green (G)"),
+            ["PreviewChannelBlue"] = ("蓝 (B)", "Blue (B)"),
+            ["PreviewChannelAlpha"] = ("Alpha (A)", "Alpha (A)"),
+
             ["UnityViewerMissing"] = ("未找到 Unity 模型查看器。请把 CFRezModelViewer.exe 构建到程序目录的 tools\\UnityModelViewer\\ 文件夹，或设置 CFREZ_UNITY_VIEWER 环境变量。", "Unity model viewer not found. Build CFRezModelViewer.exe into the tools\\UnityModelViewer\\ folder next to the program, or set the CFREZ_UNITY_VIEWER environment variable."),
             ["UnityViewerExportFailed"] = ("模型临时数据导出失败，无法启动 Unity 预览。", "Failed to export temporary model data for the Unity preview."),
             ["UnityViewerLoading"] = ("正在启动 Unity 查看器…", "Starting the Unity viewer…"),

@@ -9,13 +9,24 @@ namespace CFRezManager;
 
 public partial class ImagePreviewWindow : Window
 {
+    private enum PreviewChannel
+    {
+        Rgb,
+        Red,
+        Green,
+        Blue,
+        Alpha,
+    }
+
     private const double WindowWorkAreaMargin = 80;
 
     private string _imageName = string.Empty;
     private string? _imageInfo;
     private IReadOnlyList<ImagePreviewFrame> _frames = Array.Empty<ImagePreviewFrame>();
+    private readonly Dictionary<int, BitmapSource?> _channelBitmapCache = new();
     private readonly DispatcherTimer _animationTimer = new();
     private readonly Func<int, Task<ImagePreviewDocument?>>? _loadDocumentAsync;
+    private PreviewChannel _channel = PreviewChannel.Rgb;
     private int _documentIndex;
     private int _documentCount = 1;
     private int _currentFrameIndex;
@@ -23,6 +34,7 @@ public partial class ImagePreviewWindow : Window
     private bool _isDocumentLoading;
     private bool _isPlaying;
     private bool _isUpdatingFrameSelector;
+    private bool _isUpdatingChannelSelector;
 
     public ImagePreviewWindow(string imageName, ImageSource imageSource, string? imageInfo = null)
         : this(new ImagePreviewDocument(imageName, new[] { new ImagePreviewFrame("Original", imageSource) }, imageInfo))
@@ -73,6 +85,27 @@ public partial class ImagePreviewWindow : Window
         if (!_isUpdatingFrameSelector && FrameSelector.SelectedIndex >= 0)
         {
             SetFrame(FrameSelector.SelectedIndex);
+        }
+    }
+
+    private void ChannelSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingChannelSelector || ChannelSelector.SelectedIndex < 0)
+        {
+            return;
+        }
+
+        var channel = (PreviewChannel)ChannelSelector.SelectedIndex;
+        if (channel == _channel)
+        {
+            return;
+        }
+
+        _channel = channel;
+        _channelBitmapCache.Clear();
+        if (_frames.Count > 0)
+        {
+            SetFrame(_currentFrameIndex);
         }
     }
 
@@ -146,11 +179,25 @@ public partial class ImagePreviewWindow : Window
         PreviousImageButton.Content = LocalizedText.T("PreviewPrevious");
         NextImageButton.Content = LocalizedText.T("PreviewNext");
         UpdatePlayPauseButtonText();
+        PopulateChannelSelector();
         FrameSelector.Items.Refresh();
         if (_frames.Count > 0)
         {
             SetFrame(_currentFrameIndex);
         }
+    }
+
+    private void PopulateChannelSelector()
+    {
+        _isUpdatingChannelSelector = true;
+        ChannelSelector.Items.Clear();
+        ChannelSelector.Items.Add(LocalizedText.T("PreviewChannelRgb"));
+        ChannelSelector.Items.Add(LocalizedText.T("PreviewChannelRed"));
+        ChannelSelector.Items.Add(LocalizedText.T("PreviewChannelGreen"));
+        ChannelSelector.Items.Add(LocalizedText.T("PreviewChannelBlue"));
+        ChannelSelector.Items.Add(LocalizedText.T("PreviewChannelAlpha"));
+        ChannelSelector.SelectedIndex = (int)_channel;
+        _isUpdatingChannelSelector = false;
     }
 
     private void UpdatePlayPauseButtonText()
@@ -219,6 +266,7 @@ public partial class ImagePreviewWindow : Window
         _imageInfo = document.ImageInfo;
         _frames = document.Frames;
         _currentFrameIndex = 0;
+        _channelBitmapCache.Clear();
         ConfigureAnimation(document);
 
         _isUpdatingFrameSelector = true;
@@ -263,9 +311,10 @@ public partial class ImagePreviewWindow : Window
 
         _currentFrameIndex = index;
         ImagePreviewFrame frame = _frames[index];
-        PreviewImage.Source = frame.Source;
+        ImageSource displaySource = GetChannelDisplaySource(index, frame.Source);
+        PreviewImage.Source = displaySource;
         string? dimensions = GetDimensions(frame.Source);
-        if (frame.Source is BitmapSource bitmap)
+        if (displaySource is BitmapSource bitmap)
         {
             PreviewImage.Width = bitmap.PixelWidth;
             PreviewImage.Height = bitmap.PixelHeight;
@@ -352,6 +401,71 @@ public partial class ImagePreviewWindow : Window
     private static string? GetDimensions(ImageSource source)
     {
         return source is BitmapSource bitmap ? $"{bitmap.PixelWidth} x {bitmap.PixelHeight}" : null;
+    }
+
+    private ImageSource GetChannelDisplaySource(int frameIndex, ImageSource source)
+    {
+        if (_channel == PreviewChannel.Rgb || source is not BitmapSource bitmap)
+        {
+            return source;
+        }
+
+        if (_channelBitmapCache.TryGetValue(frameIndex, out BitmapSource? cached))
+        {
+            return cached ?? source;
+        }
+
+        BitmapSource? channelBitmap = CreateChannelBitmap(bitmap, _channel);
+        _channelBitmapCache[frameIndex] = channelBitmap;
+        return channelBitmap ?? source;
+    }
+
+    private static BitmapSource? CreateChannelBitmap(BitmapSource source, PreviewChannel channel)
+    {
+        try
+        {
+            var converted = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+            int width = converted.PixelWidth;
+            int height = converted.PixelHeight;
+            if (width <= 0 || height <= 0)
+            {
+                return null;
+            }
+
+            int stride = width * 4;
+            var pixels = new byte[stride * height];
+            converted.CopyPixels(pixels, stride, 0);
+            for (int i = 0; i < pixels.Length; i += 4)
+            {
+                byte value = channel switch
+                {
+                    PreviewChannel.Red => pixels[i + 2],
+                    PreviewChannel.Green => pixels[i + 1],
+                    PreviewChannel.Blue => pixels[i],
+                    _ => pixels[i + 3],
+                };
+                pixels[i] = value;
+                pixels[i + 1] = value;
+                pixels[i + 2] = value;
+                pixels[i + 3] = 255;
+            }
+
+            BitmapSource result = BitmapSource.Create(
+                width,
+                height,
+                source.DpiX,
+                source.DpiY,
+                PixelFormats.Bgra32,
+                null,
+                pixels,
+                stride);
+            result.Freeze();
+            return result;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     private static string? CombineInfo(string? left, string? right)

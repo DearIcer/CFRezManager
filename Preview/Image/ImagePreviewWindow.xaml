@@ -26,6 +26,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="PreviewInfoText"
                            Foreground="#E5E7EB"
@@ -34,8 +35,14 @@
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis"
                            Margin="0,0,12,0"/>
+                <ComboBox x:Name="ChannelSelector"
+                          Grid.Column="1"
+                          Width="120"
+                          Height="26"
+                          Margin="0,0,8,0"
+                          SelectionChanged="ChannelSelector_SelectionChanged"/>
                 <Button x:Name="PlayPauseButton"
-                        Grid.Column="1"
+                        Grid.Column="2"
                         Width="72"
                         Height="26"
                         Margin="0,0,8,0"
@@ -43,7 +50,7 @@
                         Click="PlayPauseButton_Click"
                         Visibility="Collapsed"/>
                 <ComboBox x:Name="FrameSelector"
-                          Grid.Column="2"
+                          Grid.Column="3"
                           Width="240"
                           Height="26"
                           Margin="0,0,8,0"
@@ -51,7 +58,7 @@
                           SelectionChanged="FrameSelector_SelectionChanged"
                           Visibility="Collapsed"/>
                 <Button x:Name="PreviousImageButton"
-                        Grid.Column="3"
+                        Grid.Column="4"
                         Width="72"
                         Height="26"
                         Margin="0,0,8,0"
@@ -59,7 +66,7 @@
                         Click="PreviousImageButton_Click"
                         Visibility="Collapsed"/>
                 <Button x:Name="NextImageButton"
-                        Grid.Column="4"
+                        Grid.Column="5"
                         Width="72"
                         Height="26"
                         Margin="0,0,8,0"

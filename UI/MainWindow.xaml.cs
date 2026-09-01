@@ -1,4 +1,5 @@
 using System.IO;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -187,7 +188,8 @@ public partial class MainWindow : Window
         ExplorerItem Item,
         string SourceRelativePath,
         string OutputRelativePath,
-        bool DecodeImageToPng);
+        bool DecodeImageToPng,
+        bool DecodeAudio);
     private readonly record struct ExtractionBatchResult(int DecodedImageCount, int DecodeFallbackCount);
     private readonly record struct ModelObjExportProgress(int Completed, int Total, string FileName);
     private readonly record struct ModelObjExportJob(ExplorerItem Item, string RelativePath);
@@ -4027,12 +4029,13 @@ public partial class MainWindow : Window
             string sourceRelativePath = MakeUniqueRelativePath(safeRelativePath, usedRelativePaths);
             string decodedRelativePath = Path.ChangeExtension(safeRelativePath, ".png") ?? $"{safeRelativePath}.png";
             string outputRelativePath = MakeUniqueRelativePath(decodedRelativePath, usedRelativePaths);
-            jobs.Add(new ExtractionJob(item, sourceRelativePath, outputRelativePath, DecodeImageToPng: true));
+            jobs.Add(new ExtractionJob(item, sourceRelativePath, outputRelativePath, DecodeImageToPng: true, DecodeAudio: false));
             return;
         }
 
         string outputPath = MakeUniqueRelativePath(safeRelativePath, usedRelativePaths);
-        jobs.Add(new ExtractionJob(item, outputPath, outputPath, DecodeImageToPng: false));
+        bool decodeAudio = DecodedAudioExporter.IsCandidate(item.FileExtension);
+        jobs.Add(new ExtractionJob(item, outputPath, outputPath, DecodeImageToPng: false, DecodeAudio: decodeAudio));
     }
 
     private static string MakeUniqueRelativePath(string relativePath, HashSet<string> usedRelativePaths)
@@ -4166,6 +4169,15 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(Path.Combine(outputDirectory, directory));
         }
 
+        // All planned output paths are claimed up front so audio jobs that decode Ogg
+        // sources to a .wav sibling can pick a non-colliding name from any worker thread.
+        var claimedOutputPaths = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+        foreach (ExtractionJob job in jobs)
+        {
+            claimedOutputPaths.TryAdd(Path.Combine(outputDirectory, job.OutputRelativePath), 0);
+            claimedOutputPaths.TryAdd(Path.Combine(outputDirectory, job.SourceRelativePath), 0);
+        }
+
         int completed = 0;
         int decodedImageCount = 0;
         int decodeFallbackCount = 0;
@@ -4190,6 +4202,13 @@ public partial class MainWindow : Window
                     Interlocked.Increment(ref decodeFallbackCount);
                 }
             }
+            else if (job.DecodeAudio)
+            {
+                if (!TryWriteDecodedAudioFile(item, destinationPath, claimedOutputPaths))
+                {
+                    WriteSourceFile(item, destinationPath);
+                }
+            }
             else
             {
                 WriteSourceFile(item, destinationPath);
@@ -4203,6 +4222,39 @@ public partial class MainWindow : Window
         });
 
         return new ExtractionBatchResult(decodedImageCount, decodeFallbackCount);
+    }
+
+    private static bool TryWriteDecodedAudioFile(
+        ExplorerItem item,
+        string destinationPath,
+        ConcurrentDictionary<string, byte> claimedOutputPaths)
+    {
+        try
+        {
+            byte[] data = ReadExplorerFileBytes(item, AudioPreviewDocumentFactory.MaxAudioPreviewBytes);
+            return DecodedAudioExporter.TryWritePlayable(
+                data,
+                destinationPath,
+                path => ClaimUniqueOutputPath(path, claimedOutputPaths)) is not null;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static string ClaimUniqueOutputPath(string path, ConcurrentDictionary<string, byte> claimedOutputPaths)
+    {
+        string candidate = path;
+        string? directory = Path.GetDirectoryName(path);
+        string name = Path.GetFileNameWithoutExtension(path);
+        string extension = Path.GetExtension(path);
+        for (int index = 2; !claimedOutputPaths.TryAdd(candidate, 0); index++)
+        {
+            candidate = Path.Combine(directory ?? string.Empty, $"{name} ({index}){extension}");
+        }
+
+        return candidate;
     }
 
     private static void WriteSourceFile(ExplorerItem item, string destinationPath)

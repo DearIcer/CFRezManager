@@ -193,6 +193,7 @@ public partial class MainWindow : Window
     private readonly record struct ModelObjExportJob(ExplorerItem Item, string RelativePath);
     private readonly record struct SearchEntry(ExplorerItem Item, string SearchText);
     private sealed record ModelObjExportBatchResult(LithTechObjExportResult ExportResult, int SkippedCount, string MappingReportPath);
+    private sealed record ModelFbxExportBatchResult(int ExportedCount, int SkippedCount, int NoAnimationCount, string OutputPath);
 
     public double TileItemWidth
     {
@@ -337,6 +338,16 @@ public partial class MainWindow : Window
             ["ExportedModelObjResult"] = ("\u5df2\u5bfc\u51fa OBJ: {0:N0} \u4e2a\u6a21\u578b, {1:N0} \u4e2a\u7f51\u683c, \u5df2\u5bfc\u51fa\u8d34\u56fe {2:N0} \u4e2a, \u7f3a\u5931 {3:N0} \u4e2a, \u8df3\u8fc7 {4:N0} \u4e2a; OBJ: {5}; MTL: {6}; \u8d34\u56fe\u76ee\u5f55: {7}; \u8bca\u65ad\u62a5\u544a: {8}", "Exported OBJ: {0:N0} models, {1:N0} meshes, {2:N0} textures exported, {3:N0} missing, skipped {4:N0}; OBJ: {5}; MTL: {6}; texture folder: {7}; diagnostics: {8}"),
             ["NoDiagnosticsReport"] = ("\u65e0", "none"),
             ["ExportObjFailed"] = ("OBJ \u5bfc\u51fa\u5931\u8d25", "OBJ export failed"),
+            ["ExportFbx"] = ("导出 FBX（含骨骼动画）...", "Export FBX (with skeletal animation)..."),
+            ["SaveFbxTitle"] = ("保存 FBX 模型", "Save FBX model"),
+            ["FbxFileFilter"] = ("FBX 模型 (*.fbx)|*.fbx|所有文件 (*.*)|*.*", "FBX models (*.fbx)|*.fbx|All files (*.*)|*.*"),
+            ["SelectFbxOutputFolderDescription"] = ("选择 FBX 输出文件夹。", "Select the FBX output folder."),
+            ["PreparingModelFbxExport"] = ("正在准备 FBX 导出...", "Preparing FBX export..."),
+            ["DecodingModelFbxExport"] = ("正在解码模型 {0:N0}/{1:N0}: {2}", "Decoding model {0:N0}/{1:N0}: {2}"),
+            ["WritingModelFbxExport"] = ("正在写入 FBX...", "Writing FBX..."),
+            ["ExportedModelFbxResult"] = ("已导出 FBX: {0:N0} 个模型，跳过 {1:N0} 个；输出: {2}{3}", "Exported FBX: {0:N0} models, skipped {1:N0}; output: {2}{3}"),
+            ["ExportedModelFbxNoAnimationNote"] = ("；其中 {0:N0} 个模型没有动画数据", "; {0:N0} model(s) had no animation data"),
+            ["ExportFbxFailed"] = ("FBX 导出失败", "FBX export failed"),
             ["OpenAudioPreview"] = ("播放音频...", "Play Audio..."),
             ["OpenImagePreview"] = ("查看图片...", "View Image..."),
             ["OpenModelPreview"] = ("查看模型...", "View Model..."),
@@ -809,6 +820,35 @@ public partial class MainWindow : Window
         await ExportModelsToObjAsync(selectedItems, outputPath);
     }
 
+    private async void ExportFbxMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        List<ExplorerItem> selectedItems = GetSelectedExplorerItems();
+        if (selectedItems.Count == 0)
+        {
+            return;
+        }
+
+        if (selectedItems.Count == 1 && !selectedItems[0].IsContainer)
+        {
+            string? outputPath = SelectFbxOutputFile(CreateDefaultFbxExportName(selectedItems));
+            if (outputPath is null)
+            {
+                return;
+            }
+
+            await ExportModelsToFbxAsync(selectedItems, outputPath, outputDirectory: null);
+            return;
+        }
+
+        string? outputDirectory = SelectFolder(T("SelectFbxOutputFolderDescription"), FolderDialogKind.Output, _selectedDirectory);
+        if (outputDirectory is null)
+        {
+            return;
+        }
+
+        await ExportModelsToFbxAsync(selectedItems, singleFilePath: null, outputDirectory);
+    }
+
     private async void OpenPreviewMenuItem_Click(object sender, RoutedEventArgs e)
     {
         List<ExplorerItem> selectedItems = GetSelectedExplorerItems();
@@ -1083,6 +1123,100 @@ public partial class MainWindow : Window
         return string.IsNullOrWhiteSpace(result.TextureReportPath)
             ? T("NoDiagnosticsReport")
             : result.TextureReportPath;
+    }
+
+    private async Task ExportModelsToFbxAsync(IReadOnlyCollection<ExplorerItem> items, string? singleFilePath, string? outputDirectory)
+    {
+        SetBusy(true, keepSearchEnabled: true);
+
+        try
+        {
+            WorkProgress.IsIndeterminate = true;
+            SetStatus("PreparingModelFbxExport");
+
+            ExplorerItem? exportRoot = _rootItem;
+            if (exportRoot is not null)
+            {
+                await Task.Run(() => LoadItemsForExtraction(new[] { exportRoot }));
+            }
+            else
+            {
+                await Task.Run(() => LoadItemsForExtraction(items));
+            }
+
+            List<ModelObjExportJob> jobs = BuildModelObjExportJobs(items);
+            if (jobs.Count == 0)
+            {
+                SetStatus("NoModelsToExport");
+                return;
+            }
+
+            WorkProgress.IsIndeterminate = false;
+            WorkProgress.Minimum = 0;
+            WorkProgress.Maximum = jobs.Count;
+            WorkProgress.Value = 0;
+
+            var progress = new Progress<ModelObjExportProgress>(state =>
+            {
+                WorkProgress.Value = state.Completed;
+                SetStatus("DecodingModelFbxExport", state.Completed, state.Total, state.FileName);
+            });
+
+            ModelFbxExportBatchResult result = await Task.Run(() => ExportModelFbxJobs(singleFilePath, outputDirectory, jobs, progress));
+            string noAnimationNote = result.NoAnimationCount > 0
+                ? FormatText("ExportedModelFbxNoAnimationNote", result.NoAnimationCount)
+                : string.Empty;
+            SetStatus("ExportedModelFbxResult", result.ExportedCount, result.SkippedCount, result.OutputPath, noAnimationNote);
+        }
+        catch (Exception ex)
+        {
+            ShowError("ExportFbxFailed", ex);
+        }
+        finally
+        {
+            SetBusy(false, keepSearchEnabled: true);
+        }
+    }
+
+    private ModelFbxExportBatchResult ExportModelFbxJobs(
+        string? singleFilePath,
+        string? outputDirectory,
+        IReadOnlyList<ModelObjExportJob> jobs,
+        IProgress<ModelObjExportProgress> progress)
+    {
+        int exportedCount = 0;
+        int skippedCount = 0;
+        int noAnimationCount = 0;
+
+        for (int index = 0; index < jobs.Count; index++)
+        {
+            ModelObjExportJob job = jobs[index];
+            progress.Report(new ModelObjExportProgress(index + 1, jobs.Count, job.Item.Name));
+            if (!TryLoadModelDocument(job.Item, out LithTechModelDocument? document, out _) ||
+                document is null)
+            {
+                skippedCount++;
+                continue;
+            }
+
+            string modelName = CreateObjSourceName(job);
+            string fbxPath = singleFilePath ?? Path.Combine(outputDirectory!, $"{modelName}.fbx");
+            Dispatcher.Invoke(() => SetStatus("WritingModelFbxExport"));
+            LithTechFbxExporter.Export(fbxPath, modelName, document);
+            if (document.Animations.Count == 0)
+            {
+                noAnimationCount++;
+            }
+
+            exportedCount++;
+        }
+
+        if (exportedCount == 0)
+        {
+            throw new InvalidOperationException(T("NoModelsToExport"));
+        }
+
+        return new ModelFbxExportBatchResult(exportedCount, skippedCount, noAnimationCount, singleFilePath ?? outputDirectory!);
     }
 
     private static Func<string, ImageSource?>? CreateObjTextureResolver(
@@ -2539,9 +2673,14 @@ public partial class MainWindow : Window
         ExportObjMenuItem.Visibility = canExportObj ? Visibility.Visible : Visibility.Collapsed;
         ExportObjMenuItem.IsEnabled = !_isBusy && canExportObj;
         ExportObjMenuItem.Header = T("ExportObj");
+        bool canExportFbx = canExportObj;
+        ExportFbxMenuItem.Visibility = canExportFbx ? Visibility.Visible : Visibility.Collapsed;
+        ExportFbxMenuItem.IsEnabled = !_isBusy && canExportFbx;
+        ExportFbxMenuItem.Header = T("ExportFbx");
         PreviewMenuSeparator.Visibility = OpenPreviewMenuItem.Visibility == Visibility.Visible ||
                                           DecodeBankMenuItem.Visibility == Visibility.Visible ||
-                                          ExportObjMenuItem.Visibility == Visibility.Visible
+                                          ExportObjMenuItem.Visibility == Visibility.Visible ||
+                                          ExportFbxMenuItem.Visibility == Visibility.Visible
             ? Visibility.Visible
             : Visibility.Collapsed;
         OpenPreviewMenuItem.IsEnabled = !_isBusy && previewItem is not null;
@@ -3066,6 +3205,7 @@ public partial class MainWindow : Window
         OpenPreviewMenuItem.Header = T("OpenPreview");
         DecodeBankMenuItem.Header = T("DecodeBank");
         ExportObjMenuItem.Header = T("ExportObj");
+        ExportFbxMenuItem.Header = T("ExportFbx");
         LocateFileMenuItem.Header = T("LocateFile");
         CopyNameMenuItem.Header = T("CopyName");
         ExtractSelectedMenuItem.Header = T("ExtractSelectedDefault");
@@ -3561,6 +3701,41 @@ public partial class MainWindow : Window
         return dialog.FileName;
     }
 
+    private string? SelectFbxOutputFile(string defaultName)
+    {
+        string safeName = SanitizePathSegment(Path.GetFileNameWithoutExtension(defaultName));
+        if (string.IsNullOrWhiteSpace(safeName))
+        {
+            safeName = "model";
+        }
+
+        using var dialog = new Forms.SaveFileDialog
+        {
+            Title = T("SaveFbxTitle"),
+            Filter = T("FbxFileFilter"),
+            DefaultExt = "fbx",
+            AddExtension = true,
+            OverwritePrompt = true,
+            InitialDirectory = ResolveInitialDirectory(_settings.LastOutputDirectory, _selectedDirectory),
+            FileName = $"{safeName}.fbx"
+        };
+
+        if (dialog.ShowDialog() != Forms.DialogResult.OK)
+        {
+            return null;
+        }
+
+        string? outputDirectory = Path.GetDirectoryName(dialog.FileName);
+        if (!string.IsNullOrEmpty(outputDirectory))
+        {
+            _settings.LastOutputDirectory = outputDirectory;
+            _settings.LastDirectory = outputDirectory;
+            _settings.Save();
+        }
+
+        return dialog.FileName;
+    }
+
     private string GetRememberedDirectory(FolderDialogKind kind)
     {
         return kind switch
@@ -3757,6 +3932,12 @@ public partial class MainWindow : Window
 
         string currentName = _currentItem?.Name ?? "models";
         return $"{currentName}_selection";
+    }
+
+    private string CreateDefaultFbxExportName(IReadOnlyList<ExplorerItem> items)
+    {
+        // Same naming scheme as the OBJ export; SelectFbxOutputFile appends the .fbx extension.
+        return CreateDefaultObjExportName(items);
     }
 
     private static string CreateObjSourceName(ModelObjExportJob job)

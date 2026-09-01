@@ -16,6 +16,12 @@ public sealed record LithTechModelDocument(
     public int VertexCount => Meshes.Sum(mesh => mesh.Vertices.Count);
 
     public int TriangleCount => Meshes.Sum(mesh => mesh.TriangleIndices.Count / 3);
+
+    // Populated by the structural LTB parser; null when the source has no node tree.
+    public LithTechModelSkeleton? Skeleton { get; init; }
+
+    // Embedded animations (empty when the source has none).
+    public IReadOnlyList<LithTechModelAnimation> Animations { get; init; } = [];
 }
 
 public sealed record LithTechMesh(
@@ -27,6 +33,12 @@ public sealed record LithTechMesh(
     IReadOnlyList<string>? MaterialHints = null)
 {
     public bool HasTextureCoordinates => TextureCoordinates is not null && TextureCoordinates.Count == Vertices.Count;
+
+    // One entry per vertex; null for rigid/static meshes.
+    public IReadOnlyList<LithTechVertexSkin>? Skin { get; init; }
+
+    // >= 0 means every vertex is rigidly bound to that skeleton node.
+    public int RigidBoneIndex { get; init; } = -1;
 }
 
 public readonly record struct LithTechVector3(double X, double Y, double Z);
@@ -118,6 +130,15 @@ internal static class LithTechModelDecoder
         if (string.Equals(extension, "ltb", StringComparison.OrdinalIgnoreCase))
         {
             string nativeStorageDescription = ReferenceEquals(prepared, data) ? "LTB binary" : "LZMA-compressed LTB";
+
+            // Prefer the structural parser (full header/pieces/skeleton/animations);
+            // fall back to the heuristic mesh scanner when the file does not fit the layout.
+            if (LtbModelParser.TryParse(prepared, fallbackName, nativeStorageDescription, data.Length, prepared.Length, out document, out _) &&
+                document is not null)
+            {
+                return true;
+            }
+
             if (TryParseLtbBinary(prepared, fallbackName, nativeStorageDescription, data.Length, prepared.Length, out document, out errorMessage))
             {
                 return true;
@@ -1522,7 +1543,7 @@ internal static class LithTechModelDecoder
         return list.Children;
     }
 
-    private static List<string> ExtractEmbeddedTexturePaths(ReadOnlySpan<byte> data)
+    internal static List<string> ExtractEmbeddedTexturePaths(ReadOnlySpan<byte> data)
     {
         var paths = new List<string>();
         var builder = new StringBuilder();
@@ -1596,7 +1617,7 @@ internal static class LithTechModelDecoder
             .TrimStart('/');
     }
 
-    private static string? ResolveTexturePath(IReadOnlyList<string> texturePaths, string meshName, int meshIndex)
+    internal static string? ResolveTexturePath(IReadOnlyList<string> texturePaths, string meshName, int meshIndex)
     {
         if (texturePaths.Count == 0)
         {

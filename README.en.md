@@ -16,6 +16,7 @@ CF Rez Manager is a Windows WPF tool for browsing, searching, previewing, extrac
 - Pack a normal Windows folder into a new `.rez` archive.
 - Preview images, textures, audio, models, maps, script configs, and common CrossFire/LithTech resources.
 - Choose per format whether decodable image resources such as BIN, DTX, TGA, and DDS are exported as source files or standard `.png` files.
+- Export LTB/LTA/LTC models from the right-click menu as FBX 7.4 (binary) files with skeleton, skin weights, and all animations (one stack per animation), ready for Blender, Unity, Unreal, and other tools.
 - Provide command-line batch entry points for OBJ/MTL model export, CFG scanning, and CFG decoding.
 
 ## Requirements

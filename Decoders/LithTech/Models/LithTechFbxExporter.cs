@@ -300,6 +300,28 @@ internal static class LithTechFbxExporter
             _connections.Add(C("OO", geometryId, modelId));
             _connections.Add(C("OO", modelId, 0L));
 
+            // LayerElementMaterial only stores polygon-to-slot indices.  FBX importers
+            // also require a Material object connected to the mesh Model for the slot
+            // to appear in the imported scene.  Keep one deterministic slot per mesh;
+            // LithTechMesh currently exposes a single texture/material identity.
+            long materialId = NextId();
+            string materialLabel = mesh.TexturePath
+                ?? mesh.MaterialHints?.FirstOrDefault(hint => !string.IsNullOrWhiteSpace(hint))
+                ?? meshName;
+            string materialName = string.IsNullOrWhiteSpace(materialLabel) ? $"{meshName}_Material" : materialLabel;
+            var material = new FbxNode("Material", materialId, $"{materialName}\u0000\u0001Material", "Phong");
+            material.AddChild(new FbxNode("Version", 102));
+            material.AddChild(new FbxNode("ShadingModel", "Phong"));
+            material.AddChild(new FbxNode("MultiLayer", 0));
+            var materialProperties = material.AddChild(new FbxNode("Properties70"));
+            materialProperties.AddChild(P("DiffuseColor", "Color", "", "A", 0.8, 0.8, 0.8));
+            materialProperties.AddChild(P("SpecularColor", "Color", "", "A", 0.2, 0.2, 0.2));
+            materialProperties.AddChild(P("Shininess", "double", "Number", "A", 20.0));
+            materialProperties.AddChild(P("TransparencyFactor", "double", "Number", "A", 0.0));
+            _objects.Add(material);
+            CountDefinition("Material");
+            _connections.Add(C("OO", materialId, modelId));
+
             BuildSkinning(mesh, meshName, geometryId, boneModelIds, boneGlobals);
         }
 

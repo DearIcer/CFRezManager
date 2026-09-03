@@ -1,11 +1,16 @@
 using System.IO;
+using System.Windows.Media.Imaging;
 
 namespace CFRezManager;
 
 /// <summary>
 /// Exports a decoded <see cref="LithTechModelDocument"/> (geometry, UVs, skeleton, skinning,
 /// and every embedded animation as a separate FBX stack) to an FBX 7.4 binary file.
-/// Coordinates are written in raw model space; no centering or scaling is applied.
+/// No centering or scaling is applied, but X is mirrored (with winding reversed) because
+/// LithTech model data is left-handed while FBX importers assume right-handed coordinates.
+/// When a <see cref="LithTechObjExportSource"/> with resolvers is supplied, resolved mesh
+/// textures are embedded as PNG Video/Texture objects so the FBX is self-contained.
+/// Returns the number of distinct textures embedded in the file.
 /// </summary>
 internal static class LithTechFbxExporter
 {
@@ -15,7 +20,7 @@ internal static class LithTechFbxExporter
     // KeyAttrFlags value for linear interpolation (matches Blender's FBX exporter).
     private const int LinearKeyAttrFlags = 24840;
 
-    public static void Export(string fbxPath, string modelName, LithTechModelDocument document)
+    public static int Export(string fbxPath, string modelName, LithTechModelDocument document, LithTechObjExportSource? textureSource = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         if (string.IsNullOrWhiteSpace(fbxPath))
@@ -35,20 +40,29 @@ internal static class LithTechFbxExporter
             Directory.CreateDirectory(directory);
         }
 
-        new SceneBuilder(document).Build(fullPath);
+        var builder = new SceneBuilder(document, textureSource);
+        builder.Build(fullPath);
+        return builder.EmbeddedTextureCount;
     }
 
-    private sealed class SceneBuilder(LithTechModelDocument document)
+    private sealed class SceneBuilder(LithTechModelDocument document, LithTechObjExportSource? textureSource)
     {
         private long _nextId = 1;
         private readonly List<FbxNode> _objects = [];
         private readonly List<FbxNode> _connections = [];
         private readonly Dictionary<string, int> _definitionCounts = new(StringComparer.Ordinal);
 
+        // Embedded texture dedupe: one Texture/Video pair per distinct bitmap or resolved path.
+        private readonly Dictionary<BitmapSource, long> _textureIdByBitmap = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, long> _textureIdByReference = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _usedTextureNames = new(StringComparer.OrdinalIgnoreCase);
+
         // Bone Model ids captured during skeleton construction; indexed by skeleton node.
         private long[]? _boneModelIds;
 
         private LithTechModelSkeleton? Skeleton => document.Skeleton;
+
+        public int EmbeddedTextureCount => _textureIdByBitmap.Count;
 
         private long NextId()
         {
@@ -185,7 +199,8 @@ internal static class LithTechFbxExporter
             var locals = new double[nodes.Count][];
             for (int i = 0; i < nodes.Count; i++)
             {
-                globals[i] = nodes[i].GlobalTransform;
+                // Conjugate by the X mirror (M·G·M) so bind poses match the mirrored geometry.
+                globals[i] = MirrorTransformX(nodes[i].GlobalTransform);
                 int parent = nodes[i].ParentIndex;
                 locals[i] = parent >= 0 && parent < i
                     ? Multiply(Invert(globals[parent]) ?? CreateIdentity(), globals[i])
@@ -232,22 +247,62 @@ internal static class LithTechFbxExporter
             for (int i = 0; i < mesh.Vertices.Count; i++)
             {
                 LithTechVector3 vertex = mesh.Vertices[i];
-                vertices[i * 3] = vertex.X;
+                // LithTech models are authored left-handed (they render correctly in Unity);
+                // FBX importers are right-handed, so X is mirrored and the winding reversed.
+                vertices[i * 3] = -vertex.X;
                 vertices[i * 3 + 1] = vertex.Y;
                 vertices[i * 3 + 2] = vertex.Z;
             }
 
             geometry.AddChild(new FbxNode("Vertices", vertices));
 
-            var polygonIndices = new int[mesh.TriangleIndices.Count];
-            for (int i = 0; i < mesh.TriangleIndices.Count; i++)
+            // Reversed winding keeps faces front-facing after the X mirror.
+            var windingIndices = new int[mesh.TriangleIndices.Count];
+            int winding = 0;
+            for (; winding + 2 < mesh.TriangleIndices.Count; winding += 3)
             {
-                int index = mesh.TriangleIndices[i];
+                windingIndices[winding] = mesh.TriangleIndices[winding];
+                windingIndices[winding + 1] = mesh.TriangleIndices[winding + 2];
+                windingIndices[winding + 2] = mesh.TriangleIndices[winding + 1];
+            }
+
+            for (; winding < mesh.TriangleIndices.Count; winding++)
+            {
+                windingIndices[winding] = mesh.TriangleIndices[winding];
+            }
+
+            var polygonIndices = new int[windingIndices.Length];
+            for (int i = 0; i < polygonIndices.Length; i++)
+            {
+                int index = windingIndices[i];
                 // The last index of each triangle is XOR-negated as the polygon terminator.
                 polygonIndices[i] = i % 3 == 2 ? -index - 1 : index;
             }
 
             geometry.AddChild(new FbxNode("PolygonVertexIndex", polygonIndices));
+
+            // Normals: prefer the stream decoded from the source model; fall back to angle-weighted smooth vertex normals so
+            // importers (which otherwise default to flat per-face shading) do not render faceted geometry.
+            IReadOnlyList<LithTechVector3> meshNormals = mesh.HasNormals
+                ? mesh.Normals!
+                : ComputeSmoothNormals(mesh);
+            var normals = new double[meshNormals.Count * 3];
+            for (int i = 0; i < meshNormals.Count; i++)
+            {
+                LithTechVector3 normal = NormalizeOrDefault(meshNormals[i]);
+                normals[i * 3] = -normal.X; // mirrored with the geometry
+                normals[i * 3 + 1] = normal.Y;
+                normals[i * 3 + 2] = normal.Z;
+            }
+
+            var normalLayer = new FbxNode("LayerElementNormal", 0);
+            normalLayer.AddChild(new FbxNode("Version", 101));
+            normalLayer.AddChild(new FbxNode("Name", ""));
+            normalLayer.AddChild(new FbxNode("MappingInformationType", "ByPolygonVertex"));
+            normalLayer.AddChild(new FbxNode("ReferenceInformationType", "IndexToDirect"));
+            normalLayer.AddChild(new FbxNode("Normals", normals));
+            normalLayer.AddChild(new FbxNode("NormalsIndex", windingIndices));
+            geometry.AddChild(normalLayer);
 
             if (mesh.HasTextureCoordinates && mesh.TextureCoordinates is not null)
             {
@@ -268,13 +323,7 @@ internal static class LithTechFbxExporter
                 uvLayer.AddChild(new FbxNode("MappingInformationType", "ByPolygonVertex"));
                 uvLayer.AddChild(new FbxNode("ReferenceInformationType", "IndexToDirect"));
                 uvLayer.AddChild(new FbxNode("UV", uvs));
-                var uvIndices = new int[mesh.TriangleIndices.Count];
-                for (int i = 0; i < uvIndices.Length; i++)
-                {
-                    uvIndices[i] = mesh.TriangleIndices[i];
-                }
-
-                uvLayer.AddChild(new FbxNode("UVIndex", uvIndices));
+                uvLayer.AddChild(new FbxNode("UVIndex", windingIndices));
                 geometry.AddChild(uvLayer);
             }
 
@@ -309,20 +358,155 @@ internal static class LithTechFbxExporter
                 ?? mesh.MaterialHints?.FirstOrDefault(hint => !string.IsNullOrWhiteSpace(hint))
                 ?? meshName;
             string materialName = string.IsNullOrWhiteSpace(materialLabel) ? $"{meshName}_Material" : materialLabel;
+            BitmapSource? textureBitmap = ResolveMeshTexture(mesh, out string? textureReference);
             var material = new FbxNode("Material", materialId, $"{materialName}\u0000\u0001Material", "Phong");
             material.AddChild(new FbxNode("Version", 102));
             material.AddChild(new FbxNode("ShadingModel", "Phong"));
             material.AddChild(new FbxNode("MultiLayer", 0));
             var materialProperties = material.AddChild(new FbxNode("Properties70"));
-            materialProperties.AddChild(P("DiffuseColor", "Color", "", "A", 0.8, 0.8, 0.8));
+            // Textured materials use a white base so importers do not darken the texture.
+            double diffuse = textureBitmap is null ? 0.8 : 1.0;
+            materialProperties.AddChild(P("DiffuseColor", "Color", "", "A", diffuse, diffuse, diffuse));
             materialProperties.AddChild(P("SpecularColor", "Color", "", "A", 0.2, 0.2, 0.2));
             materialProperties.AddChild(P("Shininess", "double", "Number", "A", 20.0));
             materialProperties.AddChild(P("TransparencyFactor", "double", "Number", "A", 0.0));
             _objects.Add(material);
             CountDefinition("Material");
             _connections.Add(C("OO", materialId, modelId));
+            if (textureBitmap is not null)
+            {
+                BuildTexture(textureBitmap, textureReference, materialName, materialId);
+            }
 
             BuildSkinning(mesh, meshName, geometryId, boneModelIds, boneGlobals);
+        }
+
+        private BitmapSource? ResolveMeshTexture(LithTechMesh mesh, out string? resolvedReference)
+        {
+            resolvedReference = null;
+            if (textureSource is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return LithTechObjExporter.ResolveMeshTexture(mesh, textureSource, out resolvedReference);
+            }
+            catch
+            {
+                resolvedReference = null;
+                return null;
+            }
+        }
+
+        // FBX 7.4 texture wiring: a Video object carries the image (PNG bytes embedded in its
+        // Content node, so the FBX stays self-contained) and a Texture object references it
+        // and binds to the material's DiffuseColor property and the mesh UV set.
+        private void BuildTexture(BitmapSource bitmap, string? reference, string materialName, long materialId)
+        {
+            string normalizedReference = NormalizeTextureReference(reference);
+            if (_textureIdByBitmap.TryGetValue(bitmap, out long textureId) ||
+                (normalizedReference.Length > 0 && _textureIdByReference.TryGetValue(normalizedReference, out textureId)))
+            {
+                _connections.Add(C("OP", textureId, materialId, "DiffuseColor"));
+                return;
+            }
+
+            byte[]? pngData = EncodePng(bitmap);
+            if (pngData is null)
+            {
+                return;
+            }
+
+            string baseName = normalizedReference.Length > 0
+                ? Path.GetFileNameWithoutExtension(normalizedReference)
+                : materialName;
+            string textureName = MakeUniqueTextureName(SanitizeTextureName(baseName));
+            string fileName = textureName + ".png";
+
+            long videoId = NextId();
+            var video = new FbxNode("Video", videoId, $"{textureName}\u0000\u0001Video", "Clip");
+            video.AddChild(new FbxNode("Type", "Clip"));
+            var videoProperties = video.AddChild(new FbxNode("Properties70"));
+            videoProperties.AddChild(P("Path", "KString", "XRefUrl", "", fileName));
+            video.AddChild(new FbxNode("UseMipMap", 0));
+            video.AddChild(new FbxNode("Filename", fileName));
+            video.AddChild(new FbxNode("RelativeFilename", fileName));
+            video.AddChild(new FbxNode("Content", pngData));
+            _objects.Add(video);
+            CountDefinition("Video");
+
+            textureId = NextId();
+            var texture = new FbxNode("Texture", textureId, $"{textureName}\u0000\u0001Texture", "");
+            texture.AddChild(new FbxNode("Type", "TextureVideoClip"));
+            texture.AddChild(new FbxNode("Version", 202));
+            texture.AddChild(new FbxNode("TextureName", $"{textureName}\u0000\u0001Texture"));
+            var textureProperties = texture.AddChild(new FbxNode("Properties70"));
+            textureProperties.AddChild(P("CurrentTextureBlendMode", "enum", "", "", 1));
+            textureProperties.AddChild(P("UVSet", "KString", "TextureUVSet", "", "UVMap"));
+            textureProperties.AddChild(P("UseMaterial", "bool", "", "", true));
+            texture.AddChild(new FbxNode("Media", $"{textureName}\u0000\u0001Video"));
+            texture.AddChild(new FbxNode("FileName", fileName));
+            texture.AddChild(new FbxNode("RelativeFilename", fileName));
+            _objects.Add(texture);
+            CountDefinition("Texture");
+
+            _connections.Add(C("OO", videoId, textureId));
+            _connections.Add(C("OP", textureId, materialId, "DiffuseColor"));
+
+            _textureIdByBitmap[bitmap] = textureId;
+            if (normalizedReference.Length > 0)
+            {
+                _textureIdByReference[normalizedReference] = textureId;
+            }
+        }
+
+        private static byte[]? EncodePng(BitmapSource bitmap)
+        {
+            try
+            {
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var stream = new MemoryStream();
+                encoder.Save(stream);
+                return stream.ToArray();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string NormalizeTextureReference(string? reference)
+        {
+            return string.IsNullOrWhiteSpace(reference)
+                ? string.Empty
+                : reference.Replace('\\', '/').Trim().Trim('"');
+        }
+
+        private static string SanitizeTextureName(string name)
+        {
+            char[] invalidChars = Path.GetInvalidFileNameChars();
+            string sanitized = new string(name.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray()).Trim();
+            return string.IsNullOrWhiteSpace(sanitized) ? "texture" : sanitized;
+        }
+
+        private string MakeUniqueTextureName(string baseName)
+        {
+            if (_usedTextureNames.Add(baseName))
+            {
+                return baseName;
+            }
+
+            for (int index = 2; ; index++)
+            {
+                string candidate = $"{baseName}_{index}";
+                if (_usedTextureNames.Add(candidate))
+                {
+                    return candidate;
+                }
+            }
         }
 
         private void BuildSkinning(LithTechMesh mesh, string meshName, long geometryId, long[]? boneModelIds, double[][]? boneGlobals)
@@ -481,7 +665,7 @@ internal static class LithTechFbxExporter
                     var z = new double[count];
                     for (int key = 0; key < count; key++)
                     {
-                        x[key] = positions[key].X;
+                        x[key] = -positions[key].X; // mirrored with the geometry
                         y[key] = positions[key].Y;
                         z[key] = positions[key].Z;
                     }
@@ -634,6 +818,11 @@ internal static class LithTechFbxExporter
                     qw /= length;
                 }
 
+                // Mirror the rotation across the YZ plane along with the geometry:
+                // for M = diag(-1,1,1), q' = (qx, -qy, -qz, qw).
+                qy = -qy;
+                qz = -qz;
+
                 // Keep sign continuity so the Euler sequence stays smooth.
                 if (i > 0 && qx * previousX + qy * previousY + qz * previousZ + qw * previousW < 0)
                 {
@@ -670,6 +859,99 @@ internal static class LithTechFbxExporter
         private static double[] CreateIdentity()
         {
             return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        }
+
+        // Mirrors a row-major 4x4 across the YZ plane (M·G·M with M = diag(-1,1,1)):
+        // negates the entries that mix the X axis, including translation X.
+        private static double[] MirrorTransformX(double[] m)
+        {
+            var result = (double[])m.Clone();
+            result[1] = -result[1]; // row 0, column 1
+            result[2] = -result[2]; // row 0, column 2
+            result[3] = -result[3]; // row 0, column 3 (translation X)
+            result[4] = -result[4]; // row 1, column 0
+            result[8] = -result[8]; // row 2, column 0
+            return result;
+        }
+
+        // Angle-weighted per-vertex normals accumulated from the triangles that reference each
+        // vertex. Hard edges stay hard because the source meshes duplicate vertices along them.
+        private static IReadOnlyList<LithTechVector3> ComputeSmoothNormals(LithTechMesh mesh)
+        {
+            int vertexCount = mesh.Vertices.Count;
+            var sums = new double[vertexCount * 3];
+            int usableIndexCount = mesh.TriangleIndices.Count - mesh.TriangleIndices.Count % 3;
+            for (int index = 0; index < usableIndexCount; index += 3)
+            {
+                int a = mesh.TriangleIndices[index];
+                int b = mesh.TriangleIndices[index + 1];
+                int c = mesh.TriangleIndices[index + 2];
+                if (a < 0 || a >= vertexCount || b < 0 || b >= vertexCount || c < 0 || c >= vertexCount)
+                {
+                    continue;
+                }
+
+                LithTechVector3 pa = mesh.Vertices[a];
+                LithTechVector3 pb = mesh.Vertices[b];
+                LithTechVector3 pc = mesh.Vertices[c];
+                // Unnormalized cross product; its length is 2x the triangle area.
+                double ux = pb.X - pa.X, uy = pb.Y - pa.Y, uz = pb.Z - pa.Z;
+                double vx = pc.X - pa.X, vy = pc.Y - pa.Y, vz = pc.Z - pa.Z;
+                double nx = uy * vz - uz * vy;
+                double ny = uz * vx - ux * vz;
+                double nz = ux * vy - uy * vx;
+                double length = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                if (length <= 1e-20)
+                {
+                    continue;
+                }
+
+                nx /= length;
+                ny /= length;
+                nz /= length;
+                AccumulateCornerNormal(sums, a, pa, pb, pc, nx, ny, nz);
+                AccumulateCornerNormal(sums, b, pb, pc, pa, nx, ny, nz);
+                AccumulateCornerNormal(sums, c, pc, pa, pb, nx, ny, nz);
+            }
+
+            var result = new LithTechVector3[vertexCount];
+            for (int i = 0; i < vertexCount; i++)
+            {
+                result[i] = NormalizeOrDefault(new LithTechVector3(sums[i * 3], sums[i * 3 + 1], sums[i * 3 + 2]));
+            }
+
+            return result;
+        }
+
+        // Weights the face normal by the corner angle at (current, next, previous).
+        private static void AccumulateCornerNormal(double[] sums, int vertex, LithTechVector3 current, LithTechVector3 next, LithTechVector3 previous, double nx, double ny, double nz)
+        {
+            double ux = next.X - current.X, uy = next.Y - current.Y, uz = next.Z - current.Z;
+            double vx = previous.X - current.X, vy = previous.Y - current.Y, vz = previous.Z - current.Z;
+            double lengthU = Math.Sqrt(ux * ux + uy * uy + uz * uz);
+            double lengthV = Math.Sqrt(vx * vx + vy * vy + vz * vz);
+            double angle;
+            if (lengthU <= 1e-20 || lengthV <= 1e-20)
+            {
+                angle = 1.0;
+            }
+            else
+            {
+                double cosine = Math.Clamp((ux * vx + uy * vy + uz * vz) / (lengthU * lengthV), -1.0, 1.0);
+                angle = Math.Acos(cosine);
+            }
+
+            sums[vertex * 3] += nx * angle;
+            sums[vertex * 3 + 1] += ny * angle;
+            sums[vertex * 3 + 2] += nz * angle;
+        }
+
+        private static LithTechVector3 NormalizeOrDefault(LithTechVector3 vector)
+        {
+            double length = Math.Sqrt(vector.X * vector.X + vector.Y * vector.Y + vector.Z * vector.Z);
+            return length <= 1e-12
+                ? new LithTechVector3(0, 1, 0)
+                : new LithTechVector3(vector.X / length, vector.Y / length, vector.Z / length);
         }
 
         // Row-major (document convention) to column-major (FBX array convention).

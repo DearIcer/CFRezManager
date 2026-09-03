@@ -195,7 +195,7 @@ public partial class MainWindow : Window
     private readonly record struct ModelObjExportJob(ExplorerItem Item, string RelativePath);
     private readonly record struct SearchEntry(ExplorerItem Item, string SearchText);
     private sealed record ModelObjExportBatchResult(LithTechObjExportResult ExportResult, int SkippedCount, string MappingReportPath);
-    private sealed record ModelFbxExportBatchResult(int ExportedCount, int SkippedCount, int NoAnimationCount, string OutputPath);
+    private sealed record ModelFbxExportBatchResult(int ExportedCount, int SkippedCount, int NoAnimationCount, int TextureCount, string OutputPath);
 
     public double TileItemWidth
     {
@@ -347,7 +347,7 @@ public partial class MainWindow : Window
             ["PreparingModelFbxExport"] = ("正在准备 FBX 导出...", "Preparing FBX export..."),
             ["DecodingModelFbxExport"] = ("正在解码模型 {0:N0}/{1:N0}: {2}", "Decoding model {0:N0}/{1:N0}: {2}"),
             ["WritingModelFbxExport"] = ("正在写入 FBX...", "Writing FBX..."),
-            ["ExportedModelFbxResult"] = ("已导出 FBX: {0:N0} 个模型，跳过 {1:N0} 个；输出: {2}{3}", "Exported FBX: {0:N0} models, skipped {1:N0}; output: {2}{3}"),
+            ["ExportedModelFbxResult"] = ("已导出 FBX: {0:N0} 个模型，打包贴图 {4:N0} 张，跳过 {1:N0} 个；输出: {2}{3}", "Exported FBX: {0:N0} models with {4:N0} packed textures, skipped {1:N0}; output: {2}{3}"),
             ["ExportedModelFbxNoAnimationNote"] = ("；其中 {0:N0} 个模型没有动画数据", "; {0:N0} model(s) had no animation data"),
             ["ExportFbxFailed"] = ("FBX 导出失败", "FBX export failed"),
             ["OpenAudioPreview"] = ("播放音频...", "Play Audio..."),
@@ -1153,6 +1153,19 @@ public partial class MainWindow : Window
                 return;
             }
 
+            SetStatus("IndexingModelTextures");
+            Func<string, ImageSource?>? globalTextureResolver = exportRoot is null
+                ? null
+                : await Task.Run(() => LithTechModelTextureLoader.CreateGlobalResolver(exportRoot));
+            Func<IEnumerable<string>, IReadOnlyList<string>>? textureConfigResolver = exportRoot is null
+                ? null
+                : await Task.Run(() => LithTechModelTextureConfigIndex.CreateResolver(exportRoot));
+            Func<IEnumerable<string>, IReadOnlyList<string>>? datTextureReferenceResolver = exportRoot is null
+                ? null
+                : await Task.Run(() => LithTechDatTextureReferenceIndex.CreateResolver(exportRoot));
+            Func<IEnumerable<string>, IReadOnlyList<string>>? textureReferenceResolver =
+                TextureReferenceResolver.Combine(textureConfigResolver, datTextureReferenceResolver);
+
             WorkProgress.IsIndeterminate = false;
             WorkProgress.Minimum = 0;
             WorkProgress.Maximum = jobs.Count;
@@ -1164,11 +1177,11 @@ public partial class MainWindow : Window
                 SetStatus("DecodingModelFbxExport", state.Completed, state.Total, state.FileName);
             });
 
-            ModelFbxExportBatchResult result = await Task.Run(() => ExportModelFbxJobs(singleFilePath, outputDirectory, jobs, progress));
+            ModelFbxExportBatchResult result = await Task.Run(() => ExportModelFbxJobs(singleFilePath, outputDirectory, jobs, globalTextureResolver, textureReferenceResolver, progress));
             string noAnimationNote = result.NoAnimationCount > 0
                 ? FormatText("ExportedModelFbxNoAnimationNote", result.NoAnimationCount)
                 : string.Empty;
-            SetStatus("ExportedModelFbxResult", result.ExportedCount, result.SkippedCount, result.OutputPath, noAnimationNote);
+            SetStatus("ExportedModelFbxResult", result.ExportedCount, result.SkippedCount, result.OutputPath, noAnimationNote, result.TextureCount);
         }
         catch (Exception ex)
         {
@@ -1184,11 +1197,14 @@ public partial class MainWindow : Window
         string? singleFilePath,
         string? outputDirectory,
         IReadOnlyList<ModelObjExportJob> jobs,
+        Func<string, ImageSource?>? globalTextureResolver,
+        Func<IEnumerable<string>, IReadOnlyList<string>>? textureConfigResolver,
         IProgress<ModelObjExportProgress> progress)
     {
         int exportedCount = 0;
         int skippedCount = 0;
         int noAnimationCount = 0;
+        int textureCount = 0;
 
         for (int index = 0; index < jobs.Count; index++)
         {
@@ -1204,7 +1220,13 @@ public partial class MainWindow : Window
             string modelName = CreateObjSourceName(job);
             string fbxPath = singleFilePath ?? Path.Combine(outputDirectory!, $"{modelName}.fbx");
             Dispatcher.Invoke(() => SetStatus("WritingModelFbxExport"));
-            LithTechFbxExporter.Export(fbxPath, modelName, document);
+            var textureSource = new LithTechObjExportSource(
+                modelName,
+                GetObjSourceResourcePath(job.Item),
+                document,
+                CreateObjTextureResolver(job.Item, globalTextureResolver),
+                textureConfigResolver);
+            textureCount += LithTechFbxExporter.Export(fbxPath, modelName, document, textureSource);
             if (document.Animations.Count == 0)
             {
                 noAnimationCount++;
@@ -1218,7 +1240,7 @@ public partial class MainWindow : Window
             throw new InvalidOperationException(T("NoModelsToExport"));
         }
 
-        return new ModelFbxExportBatchResult(exportedCount, skippedCount, noAnimationCount, singleFilePath ?? outputDirectory!);
+        return new ModelFbxExportBatchResult(exportedCount, skippedCount, noAnimationCount, textureCount, singleFilePath ?? outputDirectory!);
     }
 
     private static Func<string, ImageSource?>? CreateObjTextureResolver(

@@ -34,6 +34,11 @@ public sealed record LithTechMesh(
 {
     public bool HasTextureCoordinates => TextureCoordinates is not null && TextureCoordinates.Count == Vertices.Count;
 
+    // One entry per vertex, matching Vertices; null when the source has no normal stream (a smooth fallback is computed on export).
+    public IReadOnlyList<LithTechVector3>? Normals { get; init; }
+
+    public bool HasNormals => Normals is not null && Normals.Count == Vertices.Count;
+
     // One entry per vertex; null for rigid/static meshes.
     public IReadOnlyList<LithTechVertexSkin>? Skin { get; init; }
 

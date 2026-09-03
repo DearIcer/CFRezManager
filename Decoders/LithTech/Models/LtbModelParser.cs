@@ -352,7 +352,8 @@ internal static class LtbModelParser
                     LithTechModelDecoder.ResolveTexturePath(texturePaths, displayName, meshIndex))
                 {
                     Skin = captureData.Skin,
-                    RigidBoneIndex = captureData.RigidBoneIndex
+                    RigidBoneIndex = captureData.RigidBoneIndex,
+                    Normals = captureData.Normals is { Count: > 0 } normals && normals.Count == captureData.Vertices.Count ? normals : null
                 };
             }
         }
@@ -625,10 +626,16 @@ internal static class LtbModelParser
     {
         errorMessage = null;
         bool capturePositions = capture is not null && (mask & StreamPosition) != 0;
+        bool captureNormals = capture is not null && (mask & StreamNormal) != 0;
         bool captureUv = capture is not null && (mask & StreamUvSet1) != 0;
         if (capturePositions)
         {
             capture!.Vertices = new List<LithTechVector3>(vertCount);
+        }
+
+        if (captureNormals)
+        {
+            capture!.Normals = new List<LithTechVector3>(vertCount);
         }
 
         if (captureUv)
@@ -690,10 +697,20 @@ internal static class LtbModelParser
                 }
             }
 
-            if ((mask & StreamNormal) != 0 && !reader.TrySkip(sizeof(float) * 3))
+            if ((mask & StreamNormal) != 0)
             {
-                errorMessage = $"normal for vertex {vertex} is truncated";
-                return false;
+                if (!reader.TryReadSingle(out float nx) ||
+                    !reader.TryReadSingle(out float ny) ||
+                    !reader.TryReadSingle(out float nz))
+                {
+                    errorMessage = $"normal for vertex {vertex} is truncated";
+                    return false;
+                }
+
+                if (captureNormals)
+                {
+                    capture!.Normals!.Add(new LithTechVector3(nx, ny, nz));
+                }
             }
 
             if ((mask & StreamColor) != 0 && !reader.TrySkip(sizeof(uint)))
@@ -1353,6 +1370,7 @@ internal static class LtbModelParser
     {
         public bool IsNull { get; init; }
         public List<LithTechVector3> Vertices { get; set; } = [];
+        public List<LithTechVector3>? Normals { get; set; }
         public List<LithTechVector2>? TextureCoordinates { get; set; }
         public List<int> TriangleIndices { get; set; } = [];
         public LithTechVertexSkin[]? Skin { get; set; }

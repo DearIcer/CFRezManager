@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -14,12 +14,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="_analysis\**" />
     <Compile Remove="Pak-CF\**" />
     <Compile Remove="artifacts\**" />
+    <EmbeddedResource Remove="_analysis\**" />
     <EmbeddedResource Remove="Pak-CF\**" />
     <EmbeddedResource Remove="artifacts\**" />
+    <None Remove="_analysis\**" />
     <None Remove="Pak-CF\**" />
     <None Remove="artifacts\**" />
+    <Page Remove="_analysis\**" />
     <Page Remove="Pak-CF\**" />
     <Page Remove="artifacts\**" />
   </ItemGroup>

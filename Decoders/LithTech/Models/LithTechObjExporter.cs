@@ -629,6 +629,44 @@ internal static class LithTechObjExporter
         }
     }
 
+    /// <summary>
+    /// Runs the shared texture-candidate chain for a mesh (explicit texture path, material
+    /// hints, source-derived names, texture config references) and returns the first bitmap
+    /// the source resolver can decode. Shared with the FBX exporter.
+    /// </summary>
+    internal static BitmapSource? ResolveMeshTexture(
+        LithTechMesh mesh,
+        LithTechObjExportSource source,
+        out string? resolvedReference)
+    {
+        resolvedReference = null;
+        if (source.TextureResolver is null)
+        {
+            return null;
+        }
+
+        foreach (string candidate in EnumerateTextureCandidates(mesh, source).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            ImageSource? image;
+            try
+            {
+                image = source.TextureResolver(candidate);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (image is BitmapSource bitmap)
+            {
+                resolvedReference = candidate;
+                return bitmap;
+            }
+        }
+
+        return null;
+    }
+
     private static string? TryExportBestTexture(
         IEnumerable<string> textureCandidates,
         Func<string, ImageSource?>? textureResolver,

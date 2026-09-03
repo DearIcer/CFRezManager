@@ -16,7 +16,7 @@ CF Rez Manager 是一个 Windows WPF 工具，用来浏览、搜索、预览、�
 - 将普通 Windows 文件夹重新打包为 `.rez`。
 - 预览图片、纹理、音频、模型、地图、脚本配置和多种 CrossFire/LithTech 资源。
 - 按格式选择将 BIN、DTX、TGA、DDS 等可解码图片资源保留为源文件或导出为标准 `.png`。
-- 右键可将 LTB/LTA/LTC 模型导出为 FBX 7.4（二进制）文件，包含骨骼、蒙皮权重和全部动画（每个动画一个堆栈），可直接导入 Blender、Unity、Unreal 等工具。
+- 右键可将 LTB/LTA/LTC 模型导出为 FBX 7.4（二进制）文件，包含骨骼、蒙皮权重、全部动画（每个动画一个堆栈）、法线（平滑着色）和内嵌打包贴图，可直接导入 Blender、Unity、Unreal 等工具。
 - 提供 OBJ/MTL 模型导出、CFG 扫描和 CFG 解码等命令行批处理入口。
 
 ## 环境要求

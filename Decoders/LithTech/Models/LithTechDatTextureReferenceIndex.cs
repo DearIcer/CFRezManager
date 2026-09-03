@@ -55,6 +55,11 @@ internal static class LithTechDatTextureReferenceIndex
 
     private static DatTextureReferenceIndex BuildIndex(ExplorerItem root)
     {
+        if (ModelTextureIndexDiskCache.TryLoadDatIndex(root, out List<ModelTextureIndexDiskCache.DatTextureIndexEntryModel> cachedEntries))
+        {
+            return BuildIndexFromCache(cachedEntries);
+        }
+
         var byLookupKey = new Dictionary<string, List<DatTextureReferenceItem>>(StringComparer.OrdinalIgnoreCase);
         var allItems = new List<DatTextureReferenceItem>();
 
@@ -78,6 +83,35 @@ internal static class LithTechDatTextureReferenceIndex
             allItems.Add(indexItem);
 
             foreach (string key in EnumerateLookupKeys(path).Concat(EnumerateLookupKeys(item.Name)))
+            {
+                AddLookupItem(byLookupKey, key, indexItem);
+            }
+        }
+
+        ModelTextureIndexDiskCache.TrySaveDatIndex(root, allItems
+            .Select(item => new ModelTextureIndexDiskCache.DatTextureIndexEntryModel
+            {
+                Path = item.Path,
+                Name = item.Name,
+                Textures = item.TextureReferences.ToList()
+            })
+            .ToList());
+
+        return new DatTextureReferenceIndex(byLookupKey, allItems);
+    }
+
+    private static DatTextureReferenceIndex BuildIndexFromCache(
+        List<ModelTextureIndexDiskCache.DatTextureIndexEntryModel> cachedEntries)
+    {
+        var byLookupKey = new Dictionary<string, List<DatTextureReferenceItem>>(StringComparer.OrdinalIgnoreCase);
+        var allItems = new List<DatTextureReferenceItem>();
+
+        foreach (ModelTextureIndexDiskCache.DatTextureIndexEntryModel entry in cachedEntries)
+        {
+            var indexItem = new DatTextureReferenceItem(entry.Path, entry.Name, entry.Textures);
+            allItems.Add(indexItem);
+
+            foreach (string key in EnumerateLookupKeys(entry.Path).Concat(EnumerateLookupKeys(entry.Name)))
             {
                 AddLookupItem(byLookupKey, key, indexItem);
             }

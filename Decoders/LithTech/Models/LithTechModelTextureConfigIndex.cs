@@ -45,7 +45,6 @@ internal static class LithTechModelTextureConfigIndex
         }
 
         var cache = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        var textureCache = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         return names =>
         {
             string cacheKey = string.Join("|", names.Where(name => !string.IsNullOrWhiteSpace(name)));
@@ -54,7 +53,7 @@ internal static class LithTechModelTextureConfigIndex
                 return cached;
             }
 
-            IReadOnlyList<string> result = Resolve(index, names, textureCache);
+            IReadOnlyList<string> result = Resolve(index, names);
             cache[cacheKey] = result;
             return result;
         };
@@ -91,13 +90,40 @@ internal static class LithTechModelTextureConfigIndex
             }
         }
 
-        return new TextureConfigIndex(byName, byLooseName, allItems);
+        var index = new TextureConfigIndex(byName, byLooseName, allItems)
+        {
+            Root = root
+        };
+        ApplyDiskCache(index);
+        return index;
+    }
+
+    private static void ApplyDiskCache(TextureConfigIndex index)
+    {
+        if (index.Root is null ||
+            !ModelTextureIndexDiskCache.TryLoadCfgIndex(
+                index.Root,
+                out Dictionary<string, List<string>> configTextures,
+                out Dictionary<string, List<string>> modelTextureByName))
+        {
+            return;
+        }
+
+        foreach (KeyValuePair<string, List<string>> pair in configTextures)
+        {
+            index.ConfigTextureCache[pair.Key] = pair.Value;
+        }
+
+        index.ModelTextureDictionary = new ModelTextureDictionary(modelTextureByName.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<string>)pair.Value,
+            StringComparer.OrdinalIgnoreCase));
+        index.ModelTextureDictionaryBuilt = true;
     }
 
     private static IReadOnlyList<string> Resolve(
         TextureConfigIndex index,
-        IEnumerable<string> names,
-        Dictionary<string, IReadOnlyList<string>> textureCache)
+        IEnumerable<string> names)
     {
         var textures = new List<string>();
         var seenConfigs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -112,7 +138,7 @@ internal static class LithTechModelTextureConfigIndex
                     continue;
                 }
 
-                IReadOnlyList<string> configTextures = GetConfigTextures(configItem, textureCache);
+                IReadOnlyList<string> configTextures = GetConfigTextures(configItem, index);
                 foreach (string texture in configTextures)
                 {
                     if (seenTextures.Add(texture))
@@ -125,7 +151,7 @@ internal static class LithTechModelTextureConfigIndex
 
         if (textures.Count == 0)
         {
-            foreach (string texture in ResolveFromModelTextureDictionary(index, names, textureCache))
+            foreach (string texture in ResolveFromModelTextureDictionary(index, names))
             {
                 if (seenTextures.Add(texture))
                 {
@@ -139,9 +165,9 @@ internal static class LithTechModelTextureConfigIndex
 
     private static IReadOnlyList<string> GetConfigTextures(
         TextureConfigItem configItem,
-        Dictionary<string, IReadOnlyList<string>> textureCache)
+        TextureConfigIndex index)
     {
-        if (textureCache.TryGetValue(configItem.Path, out IReadOnlyList<string>? cached))
+        if (index.ConfigTextureCache.TryGetValue(configItem.Path, out IReadOnlyList<string>? cached))
         {
             return cached;
         }
@@ -150,16 +176,15 @@ internal static class LithTechModelTextureConfigIndex
         IReadOnlyList<string> textures = string.IsNullOrWhiteSpace(text)
             ? []
             : ExtractTextureReferences(text, configItem.Name);
-        textureCache[configItem.Path] = textures;
+        index.ConfigTextureCache[configItem.Path] = textures;
         return textures;
     }
 
     private static IReadOnlyList<string> ResolveFromModelTextureDictionary(
         TextureConfigIndex index,
-        IEnumerable<string> names,
-        Dictionary<string, IReadOnlyList<string>> textureCache)
+        IEnumerable<string> names)
     {
-        ModelTextureDictionary dictionary = GetModelTextureDictionary(index, textureCache);
+        ModelTextureDictionary dictionary = GetModelTextureDictionary(index);
         if (dictionary.IsEmpty)
         {
             return [];
@@ -190,8 +215,7 @@ internal static class LithTechModelTextureConfigIndex
     }
 
     private static ModelTextureDictionary GetModelTextureDictionary(
-        TextureConfigIndex index,
-        Dictionary<string, IReadOnlyList<string>> textureCache)
+        TextureConfigIndex index)
     {
         lock (index.ModelTextureDictionarySync)
         {
@@ -200,18 +224,31 @@ internal static class LithTechModelTextureConfigIndex
                 return index.ModelTextureDictionary ?? ModelTextureDictionary.Empty;
             }
 
-            index.ModelTextureDictionary = BuildModelTextureDictionary(index.AllItems, textureCache);
+            index.ModelTextureDictionary = BuildModelTextureDictionary(index);
             index.ModelTextureDictionaryBuilt = true;
+            SaveDiskCache(index);
             return index.ModelTextureDictionary;
         }
     }
 
+    private static void SaveDiskCache(TextureConfigIndex index)
+    {
+        if (index.Root is null || index.ModelTextureDictionary is null)
+        {
+            return;
+        }
+
+        ModelTextureIndexDiskCache.TrySaveCfgIndex(
+            index.Root,
+            index.ConfigTextureCache,
+            index.ModelTextureDictionary.ByName);
+    }
+
     private static ModelTextureDictionary BuildModelTextureDictionary(
-        IReadOnlyList<TextureConfigItem> configItems,
-        Dictionary<string, IReadOnlyList<string>> textureCache)
+        TextureConfigIndex index)
     {
         var byName = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (TextureConfigItem configItem in configItems.Where(ShouldScanForModelTextureDictionary))
+        foreach (TextureConfigItem configItem in index.AllItems.Where(ShouldScanForModelTextureDictionary))
         {
             string? text = TryReadConfigText(configItem.Item);
             if (string.IsNullOrWhiteSpace(text))
@@ -226,7 +263,7 @@ internal static class LithTechModelTextureConfigIndex
 
             if (!IsGenericConfigName(configItem.Name))
             {
-                IReadOnlyList<string> configTextures = GetConfigTextures(configItem, textureCache);
+                IReadOnlyList<string> configTextures = GetConfigTextures(configItem, index);
                 if (configTextures.Count > 0)
                 {
                     AddModelTextureMapping(byName, configItem.Name, configTextures);
@@ -763,6 +800,8 @@ internal static class LithTechModelTextureConfigIndex
         public object ModelTextureDictionarySync { get; } = new();
         public bool ModelTextureDictionaryBuilt { get; set; }
         public ModelTextureDictionary? ModelTextureDictionary { get; set; }
+        public ExplorerItem? Root { get; set; }
+        public Dictionary<string, IReadOnlyList<string>> ConfigTextureCache { get; } = new(StringComparer.OrdinalIgnoreCase);
         public bool IsEmpty => ByName.Count == 0 && ByLooseName.Count == 0 && AllItems.Count == 0;
     }
 

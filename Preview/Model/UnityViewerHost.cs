@@ -21,6 +21,7 @@ internal sealed class UnityViewerHost : HwndHost
 
     private readonly string _viewerExePath;
     private readonly string _modelPath;
+    private readonly string? _animPackagePath;
     private readonly DispatcherTimer _pollTimer;
     private Process? _process;
     private IntPtr _hostHandle;
@@ -33,10 +34,11 @@ internal sealed class UnityViewerHost : HwndHost
 
     public event EventHandler<string>? ViewerFailed;
 
-    public UnityViewerHost(string viewerExePath, string modelPath)
+    public UnityViewerHost(string viewerExePath, string modelPath, string? animPackagePath = null)
     {
         _viewerExePath = viewerExePath;
         _modelPath = modelPath;
+        _animPackagePath = animPackagePath;
         _pollTimer = new DispatcherTimer { Interval = PollInterval };
         _pollTimer.Tick += PollTimer_Tick;
     }
@@ -102,10 +104,16 @@ internal sealed class UnityViewerHost : HwndHost
     {
         try
         {
+            string arguments = $"-parentHWND {_hostHandle} -screen-width {width} -screen-height {height} --cfrez-model \"{_modelPath}\"";
+            if (!string.IsNullOrWhiteSpace(_animPackagePath))
+            {
+                arguments += $" --cfrez-anim \"{_animPackagePath}\"";
+            }
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = _viewerExePath,
-                Arguments = $"-parentHWND {_hostHandle} -screen-width {width} -screen-height {height} --cfrez-model \"{_modelPath}\"",
+                Arguments = arguments,
                 UseShellExecute = false,
                 WorkingDirectory = Path.GetDirectoryName(_viewerExePath) ?? string.Empty
             };

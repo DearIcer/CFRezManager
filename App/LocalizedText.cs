@@ -35,6 +35,8 @@ internal static class LocalizedText
             ["UnityViewerLoading"] = ("正在启动 Unity 查看器…", "Starting the Unity viewer…"),
             ["UnityViewerFailed"] = ("Unity 查看器启动失败: {0}", "Unity viewer failed to start: {0}"),
             ["ModelPreviewShortcutHint"] = ("左键/WASD 自由观察 · 右键/Esc 退出 · 滚轮 前进/后退 · R 重置视角", "Left button/WASD free look · Right button/Esc release · Wheel move · R reset view"),
+            ["ModelPreviewAnimationLabel"] = ("动画:", "Animation:"),
+            ["ModelPreviewBindPose"] = ("绑定姿势", "Bind pose"),
 
             ["ModelOuterCompressionFailed"] = ("无法解开模型外层压缩。", "Could not decompress the model wrapper."),
             ["ModelLtcNotRecognized"] = ("LTC 不是可直接识别的 LTA 文本/压缩文本，也未能用内置 LTC 解码器还原为 LTA。可配置 CFREZ_LTC_TO_LTA 作为外部兜底。", "The LTC is not directly recognizable LTA text/compressed text, and the built-in LTC decoder could not restore it to LTA. Configure CFREZ_LTC_TO_LTA as an external fallback."),

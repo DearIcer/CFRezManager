@@ -3,7 +3,7 @@ using System.Windows.Media;
 
 namespace CFRezManager;
 
-internal sealed record UnityPreviewExport(string ObjPath, string DirectoryPath);
+internal sealed record UnityPreviewExport(string ObjPath, string DirectoryPath, string? AnimPackagePath);
 
 internal static class UnityPreviewExporter
 {
@@ -24,7 +24,18 @@ internal static class UnityPreviewExporter
                 document,
                 textureResolver);
             LithTechObjExporter.Export(objPath, [source]);
-            return new UnityPreviewExport(objPath, directoryPath);
+
+            string? animPackagePath = null;
+            if (document.Skeleton is not null && document.Animations.Count > 0)
+            {
+                string candidatePath = Path.Combine(directoryPath, "preview.cfan");
+                if (LithTechAnimPackageExporter.Export(candidatePath, source))
+                {
+                    animPackagePath = candidatePath;
+                }
+            }
+
+            return new UnityPreviewExport(objPath, directoryPath, animPackagePath);
         }
         catch
         {

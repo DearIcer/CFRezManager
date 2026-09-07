@@ -10,6 +10,8 @@ internal static class LocalizedText
         new Dictionary<string, (string Chinese, string English)>
         {
             ["PreviewFailedTitle"] = ("预览失败", "Preview failed"),
+            ["AttributionTitle"] = ("声明与致敬", "Attribution & Thanks"),
+            ["AttributionMessage"] = ("本项目基于 LRolinx 的 CFRezManager 二次开发。\n特别感谢并致敬原始作者 LRolinx。\n原始仓库: https://github.com/LRolinx/CFRezManager", "This project is derived from LRolinx's CFRezManager.\nSpecial thanks and tribute to the original author LRolinx.\nOriginal repository: https://github.com/LRolinx/CFRezManager"),
             ["PreviewUnsupportedFile"] = ("无法预览此文件。", "Cannot preview this file."),
             ["PreviewUnsupportedFileName"] = ("无法预览此文件: {0}", "Cannot preview this file: {0}"),
             ["PreviewModelDecodeFailedFileName"] = ("无法解码模型: {0}", "Cannot decode model: {0}"),

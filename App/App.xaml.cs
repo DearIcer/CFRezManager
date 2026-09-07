@@ -61,6 +61,12 @@ public partial class App : System.Windows.Application
         ThemeManager.ApplySavedTheme();
         ThumbnailDiskCache.TryClearLegacyCache();
 
+        System.Windows.MessageBox.Show(
+            LocalizedText.T("AttributionMessage"),
+            LocalizedText.T("AttributionTitle"),
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Information);
+
         var mainWindow = new MainWindow();
         MainWindow = mainWindow;
         mainWindow.Show();

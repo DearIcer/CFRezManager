@@ -52,6 +52,42 @@
             </Grid>
         </Border>
 
+        <Border x:Name="PlaybackPanel"
+                DockPanel.Dock="Bottom"
+                Background="{DynamicResource AppSurfaceAltBrush}"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,7"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="PlayPauseButton"
+                        Padding="12,3"
+                        FontSize="11"
+                        VerticalAlignment="Center"
+                        Click="PlayPauseButton_Click"/>
+                <Slider x:Name="PlaybackSlider"
+                        Grid.Column="1"
+                        Minimum="0"
+                        Maximum="1"
+                        VerticalAlignment="Center"
+                        Margin="10,0"
+                        IsMoveToPointEnabled="True"
+                        PreviewMouseLeftButtonDown="PlaybackSlider_PreviewMouseLeftButtonDown"
+                        PreviewMouseLeftButtonUp="PlaybackSlider_PreviewMouseLeftButtonUp"/>
+                <TextBlock x:Name="PlaybackTimeText"
+                           Grid.Column="2"
+                           Foreground="{DynamicResource AppSubtleTextBrush}"
+                           FontSize="11"
+                           VerticalAlignment="Center"
+                           Text="0.00 / 0.00"/>
+            </Grid>
+        </Border>
+
         <Grid x:Name="ViewerContainer" ClipToBounds="True">
             <TextBlock x:Name="ViewerStatusText"
                        HorizontalAlignment="Center"

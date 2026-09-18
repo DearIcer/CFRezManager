@@ -232,6 +232,10 @@ internal static class LithTechAnimPackageExporter
                 LithTechNodeChannel? channel = nodeIndex < animation.Channels.Count ? animation.Channels[nodeIndex] : null;
                 bool hasPositions = channel?.Positions is not null && channel.Positions.Count == keyCount;
                 bool hasRotations = channel?.Rotations is not null && channel.Rotations.Count == keyCount;
+                // Pin coordinate-conversion roots ("Scene Root") to identity; see
+                // LithTechModelSkeletonExtensions.IsCoordinateConversionRoot.
+                bool pinRootToIdentity = (hasPositions || hasRotations) &&
+                    document.Skeleton.IsCoordinateConversionRoot(nodeIndex);
                 writer.Write(hasPositions);
                 writer.Write(hasRotations);
 
@@ -239,9 +243,9 @@ internal static class LithTechAnimPackageExporter
                 {
                     foreach (LithTechVector3 position in channel!.Positions!)
                     {
-                        writer.Write((float)position.X);
-                        writer.Write((float)position.Y);
-                        writer.Write((float)position.Z);
+                        writer.Write(pinRootToIdentity ? 0f : (float)position.X);
+                        writer.Write(pinRootToIdentity ? 0f : (float)position.Y);
+                        writer.Write(pinRootToIdentity ? 0f : (float)position.Z);
                     }
                 }
 
@@ -249,10 +253,10 @@ internal static class LithTechAnimPackageExporter
                 {
                     foreach (LithTechQuaternion rotation in channel!.Rotations!)
                     {
-                        writer.Write((float)rotation.X);
-                        writer.Write((float)rotation.Y);
-                        writer.Write((float)rotation.Z);
-                        writer.Write((float)rotation.W);
+                        writer.Write(pinRootToIdentity ? 0f : (float)rotation.X);
+                        writer.Write(pinRootToIdentity ? 0f : (float)rotation.Y);
+                        writer.Write(pinRootToIdentity ? 0f : (float)rotation.Z);
+                        writer.Write(pinRootToIdentity ? 1f : (float)rotation.W);
                     }
                 }
             }

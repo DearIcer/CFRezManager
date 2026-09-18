@@ -1284,8 +1284,17 @@ public partial class MainWindow : Window
                 return true;
             }
 
-            return LithTechModelDecoder.TryDecode(data, item.Name, extension, out document, out errorMessage) &&
-                   document is not null;
+            if (!LithTechModelDecoder.TryDecode(data, item.Name, extension, out document, out errorMessage) ||
+                document is null)
+            {
+                return false;
+            }
+
+            // A skeleton-only variant (e.g. PV-xxx_WOMAN_BL.ltb) borrows retargeted
+            // animations from its sibling animation file (PV-xxx.ltb) when present.
+            document = LithTechModelAnimationPairing.WithSiblingAnimations(
+                document, item.Name, fileName => item.TryReadSiblingFileBytes(fileName, maxBytes));
+            return true;
         }
         catch (Exception ex)
         {

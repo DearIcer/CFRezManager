@@ -62,3 +62,32 @@ public readonly record struct LithTechVertexSkin(
         }
     }
 }
+
+internal static class LithTechModelSkeletonExtensions
+{
+    /// <summary>
+    /// True for root nodes whose bind transform is a coordinate conversion rather than plain
+    /// identity (the LithTech "Scene Root" is typically a 180° Y flip). Animation channels of
+    /// such a root's children are stored in model space (they equal the stored node globals),
+    /// so exporters must pin the root to identity during playback instead of composing its
+    /// channel — otherwise the root transform is applied twice and the model swings around.
+    /// Identity roots keep their channel untouched so genuine root motion is preserved.
+    /// </summary>
+    public static bool IsCoordinateConversionRoot(this LithTechModelSkeleton skeleton, int nodeIndex)
+    {
+        LithTechModelNode node = skeleton.Nodes[nodeIndex];
+        if (node.ParentIndex >= 0)
+        {
+            return false;
+        }
+
+        double[] g = node.GlobalTransform;
+        return Math.Abs(g[0] - 1.0) > 1e-3 ||
+               Math.Abs(g[5] - 1.0) > 1e-3 ||
+               Math.Abs(g[10] - 1.0) > 1e-3 ||
+               Math.Abs(g[1]) > 1e-3 || Math.Abs(g[2]) > 1e-3 ||
+               Math.Abs(g[4]) > 1e-3 || Math.Abs(g[6]) > 1e-3 ||
+               Math.Abs(g[8]) > 1e-3 || Math.Abs(g[9]) > 1e-3 ||
+               Math.Abs(g[3]) > 1e-3 || Math.Abs(g[7]) > 1e-3 || Math.Abs(g[11]) > 1e-3;
+    }
+}

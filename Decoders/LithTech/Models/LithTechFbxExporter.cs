@@ -40,12 +40,12 @@ internal static class LithTechFbxExporter
             Directory.CreateDirectory(directory);
         }
 
-        var builder = new SceneBuilder(modelName, document, textureSource);
+        var builder = new SceneBuilder(document, textureSource);
         builder.Build(fullPath);
         return builder.EmbeddedTextureCount;
     }
 
-    private sealed class SceneBuilder(string modelName, LithTechModelDocument document, LithTechObjExportSource? textureSource)
+    private sealed class SceneBuilder(LithTechModelDocument document, LithTechObjExportSource? textureSource)
     {
         private long _nextId = 1;
         private readonly List<FbxNode> _objects = [];
@@ -196,13 +196,15 @@ internal static class LithTechFbxExporter
         {
             var nodes = skeleton.Nodes;
 
-            // Wrap the bone hierarchy in a named container (identity transform) so FBX
-            // importers treat it as the skeleton root; otherwise bones dangle directly
-            // off the scene root and Blender invents a default "Armature" object for
-            // them, which leaks into action names like "Armature|Armature|track".
-            string containerName = string.IsNullOrWhiteSpace(modelName) ? "Skeleton" : modelName;
+            // Wrap the bone hierarchy in a container (identity transform) so FBX importers
+            // treat it as the skeleton root; otherwise bones dangle directly off the scene
+            // root and Blender invents a default "Armature" object for them, which leaks
+            // into action names like "Armature|Armature|track". The name is deliberately
+            // constant: Unity binds animation clips to bones by transform path, and a
+            // constant container keeps paths identical across model variants sharing one
+            // animation set (PV-xxx.ltb vs PV-xxx_BL.ltb) and across motion libraries.
             long containerId = NextId();
-            var container = new FbxNode("Model", containerId, $"{containerName}\u0000\u0001Model", "Null");
+            var container = new FbxNode("Model", containerId, "Armature\u0000\u0001Model", "Null");
             container.AddChild(new FbxNode("Version", 232));
             var containerProperties = container.AddChild(new FbxNode("Properties70"));
             containerProperties.AddChild(P("Lcl Translation", "Lcl Translation", "", "A", 0.0, 0.0, 0.0));
@@ -676,6 +678,9 @@ internal static class LithTechFbxExporter
                 }
 
                 long modelId = _boneModelIds[nodeIndex];
+                // Pin coordinate-conversion roots ("Scene Root") to identity; see
+                // LithTechModelSkeletonExtensions.IsCoordinateConversionRoot.
+                bool pinRootToIdentity = skeleton.IsCoordinateConversionRoot(nodeIndex);
                 if (channel.Positions is { Count: > 0 } positions)
                 {
                     int count = Math.Min(positions.Count, keyTimes.Length);
@@ -684,9 +689,9 @@ internal static class LithTechFbxExporter
                     var z = new double[count];
                     for (int key = 0; key < count; key++)
                     {
-                        x[key] = -positions[key].X; // mirrored with the geometry
-                        y[key] = positions[key].Y;
-                        z[key] = positions[key].Z;
+                        x[key] = pinRootToIdentity ? 0.0 : -positions[key].X; // mirrored with the geometry
+                        y[key] = pinRootToIdentity ? 0.0 : positions[key].Y;
+                        z[key] = pinRootToIdentity ? 0.0 : positions[key].Z;
                     }
 
                     BuildCurveNode(animationName, layerId, modelId, "Lcl Translation", keyTimes, x, y, z);
@@ -701,9 +706,9 @@ internal static class LithTechFbxExporter
                     var z = new double[count];
                     for (int key = 0; key < count; key++)
                     {
-                        x[key] = eulers[key].X;
-                        y[key] = eulers[key].Y;
-                        z[key] = eulers[key].Z;
+                        x[key] = pinRootToIdentity ? 0.0 : eulers[key].X;
+                        y[key] = pinRootToIdentity ? 0.0 : eulers[key].Y;
+                        z[key] = pinRootToIdentity ? 0.0 : eulers[key].Z;
                     }
 
                     BuildCurveNode(animationName, layerId, modelId, "Lcl Rotation", keyTimes, x, y, z);

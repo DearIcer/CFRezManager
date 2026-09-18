@@ -560,7 +560,7 @@ internal static class LithTechObjExporter
         }
     }
 
-    private static IEnumerable<string> StripModelVariantSuffixes(string stem)
+    internal static IEnumerable<string> StripModelVariantSuffixes(string stem)
     {
         string[] suffixes =
         [

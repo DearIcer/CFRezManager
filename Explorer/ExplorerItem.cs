@@ -1419,9 +1419,16 @@ public sealed class ExplorerItem : INotifyPropertyChanged
                 return worldDocument;
             }
 
-            return LithTechModelDecoder.TryDecode(data, Name, extension, out LithTechModelDocument? document, out _)
-                ? document
-                : null;
+            if (!LithTechModelDecoder.TryDecode(data, Name, extension, out LithTechModelDocument? document, out _) ||
+                document is null)
+            {
+                return null;
+            }
+
+            // A skeleton-only variant (e.g. PV-xxx_WOMAN_BL.ltb) borrows retargeted
+            // animations from its sibling animation file (PV-xxx.ltb) when present.
+            return LithTechModelAnimationPairing.WithSiblingAnimations(
+                document, Name, fileName => TryReadSiblingFileBytes(fileName, MaxModelPreviewBytes));
         }
         catch
         {
@@ -1560,6 +1567,80 @@ public sealed class ExplorerItem : INotifyPropertyChanged
         using Stream source = RezArchiveReader.OpenFileData(Archive, ArchiveFile);
         source.ReadExactly(data);
         return data;
+    }
+
+    /// <summary>
+    /// Reads a sibling file sitting next to this item (same local folder or same REZ
+    /// directory). Used to find the animation LTB paired with a skeleton-only variant
+    /// (PV-xxx_BL.ltb → PV-xxx.ltb). Returns null when the sibling is missing or too large;
+    /// never throws.
+    /// </summary>
+    internal byte[]? TryReadSiblingFileBytes(string fileName, int maxBytes)
+    {
+        try
+        {
+            if (Kind == ExplorerItemKind.LocalFile)
+            {
+                string? directory = Path.GetDirectoryName(SourcePath);
+                if (string.IsNullOrEmpty(directory))
+                {
+                    return null;
+                }
+
+                var info = new FileInfo(Path.Combine(directory, fileName));
+                if (!info.Exists || info.Length < 0 || info.Length > maxBytes || info.Length > int.MaxValue)
+                {
+                    return null;
+                }
+
+                return File.ReadAllBytes(info.FullName);
+            }
+
+            if (Kind == ExplorerItemKind.RezFile && Archive is not null && ArchiveFile is not null)
+            {
+                string fullPath = ArchiveFile.FullPath;
+                int separator = fullPath.LastIndexOfAny(['/', '\\']);
+                string siblingPath = (separator >= 0 ? fullPath[..(separator + 1)] : string.Empty) + fileName;
+                RezFileNode? sibling = FindArchiveFileByPath(Archive.Root, siblingPath);
+                if (sibling is null || sibling.Size < 0 || sibling.Size > maxBytes)
+                {
+                    return null;
+                }
+
+                byte[] data = new byte[sibling.Size];
+                using Stream source = RezArchiveReader.OpenFileData(Archive, sibling);
+                source.ReadExactly(data);
+                return data;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static RezFileNode? FindArchiveFileByPath(RezDirectoryNode directory, string fullPath)
+    {
+        foreach (RezNode child in directory.Children)
+        {
+            if (child is RezDirectoryNode subdirectory)
+            {
+                RezFileNode? hit = FindArchiveFileByPath(subdirectory, fullPath);
+                if (hit is not null)
+                {
+                    return hit;
+                }
+            }
+            else if (child is RezFileNode file &&
+                     file.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return file;
+            }
+        }
+
+        return null;
     }
 
     private byte[]? ReadFilePrefixBytes(int maxBytes)

@@ -40,12 +40,12 @@ internal static class LithTechFbxExporter
             Directory.CreateDirectory(directory);
         }
 
-        var builder = new SceneBuilder(document, textureSource);
+        var builder = new SceneBuilder(modelName, document, textureSource);
         builder.Build(fullPath);
         return builder.EmbeddedTextureCount;
     }
 
-    private sealed class SceneBuilder(LithTechModelDocument document, LithTechObjExportSource? textureSource)
+    private sealed class SceneBuilder(string modelName, LithTechModelDocument document, LithTechObjExportSource? textureSource)
     {
         private long _nextId = 1;
         private readonly List<FbxNode> _objects = [];
@@ -195,6 +195,23 @@ internal static class LithTechFbxExporter
         private long[] BuildSkeleton(LithTechModelSkeleton skeleton, out double[][] globals)
         {
             var nodes = skeleton.Nodes;
+
+            // Wrap the bone hierarchy in a named container (identity transform) so FBX
+            // importers treat it as the skeleton root; otherwise bones dangle directly
+            // off the scene root and Blender invents a default "Armature" object for
+            // them, which leaks into action names like "Armature|Armature|track".
+            string containerName = string.IsNullOrWhiteSpace(modelName) ? "Skeleton" : modelName;
+            long containerId = NextId();
+            var container = new FbxNode("Model", containerId, $"{containerName}\u0000\u0001Model", "Null");
+            container.AddChild(new FbxNode("Version", 232));
+            var containerProperties = container.AddChild(new FbxNode("Properties70"));
+            containerProperties.AddChild(P("Lcl Translation", "Lcl Translation", "", "A", 0.0, 0.0, 0.0));
+            containerProperties.AddChild(P("Lcl Rotation", "Lcl Rotation", "", "A", 0.0, 0.0, 0.0));
+            containerProperties.AddChild(P("Lcl Scaling", "Lcl Scaling", "", "A", 1.0, 1.0, 1.0));
+            _objects.Add(container);
+            CountDefinition("Model");
+            _connections.Add(C("OO", containerId, 0L));
+
             globals = new double[nodes.Count][];
             var locals = new double[nodes.Count][];
             for (int i = 0; i < nodes.Count; i++)
@@ -229,7 +246,9 @@ internal static class LithTechFbxExporter
 
                 _connections.Add(C("OO", attributeId, modelId));
                 int parent = nodes[i].ParentIndex;
-                _connections.Add(C("OO", modelId, parent >= 0 && parent < i ? modelIds[parent] : 0L));
+                // Root bones attach to the container (identity transform, so their
+                // local matrices stay valid) instead of the scene root.
+                _connections.Add(C("OO", modelId, parent >= 0 && parent < i ? modelIds[parent] : containerId));
             }
 
             return modelIds;

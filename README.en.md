@@ -7,6 +7,13 @@
 
 CF Rez Manager is a Windows WPF tool for browsing, searching, previewing, extracting, and packing LithTech / CrossFire `.rez` archives. It can also inspect loose resource files from extracted folders.
 
+> This repository is an enhanced fork of [LRolinx/CFRezManager](https://github.com/LRolinx/CFRezManager). Compared with the original project, it adds:
+>
+> - **Animation preview**: the model preview window can play skeletal animations, with track switching, play/pause, and a seekable progress bar (driven by the [RezView](https://github.com/DearIcer/RezView) Unity viewer process).
+> - **FBX export**: LTB/LTA/LTC models can be exported as FBX 7.4 (binary) with skeleton, skin weights, all animations, and embedded textures.
+> - **Multi-volume REZ support**: CrossFire split archives (e.g. `rf017.rez` + `rf017_1.rez` + ...) can be browsed and exported as a single archive.
+> - Plus various code optimizations and bug fixes.
+
 ## What It Does
 
 - Browse `.rez` archives, internal REZ folders, and normal resource folders.
@@ -100,7 +107,7 @@ Common right-click actions:
 - Images and textures: PNG, JPG, BMP, GIF, TIFF, DDS, TGA, DTX, CrossFire image BIN, original-size preview, and previous/next navigation.
 - Compressed resources: common LZMA-wrapped resources, with thumbnail badges such as `RAW`, `LZMA`, `DXT`, and `TXT`.
 - Audio: WAV, OGG, MP3, and FMOD `.bank`, with waveform thumbnails, track list, playback controls, seeking, and dynamic spectrum display. OGG/MP3 previews decode to PCM before spectrum rendering so normal audio files behave more like FMOD BANK streams.
-- Models and maps: LTC, LTB, LTA, DAT, and SPR, with thumbnails and standalone preview windows; SPR can autoplay animation frames. The model preview window embeds a Unity viewer process (URP rendering); place the Unity build output in `tools\UnityModelViewer\` next to the program (or point the `CFREZ_UNITY_VIEWER` environment variable at the exe).
+- Models and maps: LTC, LTB, LTA, DAT, and SPR, with thumbnails and standalone preview windows; SPR can autoplay animation frames. The model preview window embeds a Unity viewer process (URP rendering); the viewer's Unity project source lives in the [DearIcer/RezView](https://github.com/DearIcer/RezView) repository. Place the Unity build output in `tools\UnityModelViewer\` next to the program (or point the `CFREZ_UNITY_VIEWER` environment variable at the exe).
 - Text and config resources: CFT, FCF, FXF, FXO, NAV, APF, REF, TXT, selected WAVE resources, CrossFire UI script `.bin`, and CFG.
 - CFG batch work: scan texture references, decode plain/LZMA/ENC/REZ-phase text CFG files, classify failed decodes, and render previews for binary RGB-strip CFG files.
 

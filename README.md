@@ -7,6 +7,13 @@ English documentation is available in [README.en.md](README.en.md).
 
 CF Rez Manager 是一个 Windows WPF 工具，用来浏览、搜索、预览、解包和重新打包 LithTech / CrossFire 的 `.rez` 资源包，也能直接查看已解包目录里的散文件资源。
 
+> 本仓库是 [LRolinx/CFRezManager](https://github.com/LRolinx/CFRezManager) 的增强分支，相比原项目新增：
+>
+> - **动画预览**：模型预览窗口可播放骨骼动画，支持切换动画、播放/暂停和进度拖动（由 [RezView](https://github.com/DearIcer/RezView) Unity 查看器进程驱动）。
+> - **FBX 导出**：LTB/LTA/LTC 模型可导出 FBX 7.4（二进制），含骨骼、蒙皮权重、全部动画和内嵌贴图。
+> - **REZ 分卷支持**：CrossFire 分卷包（如 `rf017.rez` + `rf017_1.rez` + …）可作为单个包浏览和导出。
+> - 以及若干代码优化与问题修复。
+
 ## 能做什么
 
 - 浏览 `.rez` 包、REZ 内部目录和普通资源文件夹。
@@ -100,7 +107,7 @@ CFRezManager/
 - 图片和纹理：PNG、JPG、BMP、GIF、TIFF、DDS、TGA、DTX、CrossFire 图片 BIN，支持原始尺寸预览和上一张/下一张切换。
 - 压缩资源：支持常见 LZMA 外壳资源，缩略图角标会标出 `RAW`、`LZMA`、`DXT`、`TXT` 等状态。
 - 音频：WAV、OGG、MP3 和 FMOD `.bank`，支持波形缩略图、曲目列表、播放控制、进度拖动和动态频谱；OGG/MP3 预览会解码为 PCM 后生成频谱，让普通音频和 FMOD BANK 的波形表现更一致。
-- 模型和地图：LTC、LTB、LTA、DAT、SPR，可生成缩略图并打开独立预览窗口；SPR 可自动播放动画帧。模型预览窗口内嵌一个 Unity 查看器进程（URP 渲染），需要把 Unity 构建产物放在程序目录的 `tools\UnityModelViewer\` 下（或设置 `CFREZ_UNITY_VIEWER` 环境变量指向 exe）。
+- 模型和地图：LTC、LTB、LTA、DAT、SPR，可生成缩略图并打开独立预览窗口；SPR 可自动播放动画帧。模型预览窗口内嵌一个 Unity 查看器进程（URP 渲染），查看器的 Unity 工程源码见 [DearIcer/RezView](https://github.com/DearIcer/RezView) 仓库；需要把 Unity 构建产物放在程序目录的 `tools\UnityModelViewer\` 下（或设置 `CFREZ_UNITY_VIEWER` 环境变量指向 exe）。
 - 文本和配置：CFT、FCF、FXF、FXO、NAV、APF、REF、TXT、部分 WAVE 资源、CrossFire UI 脚本 `.bin`、CFG。
 - CFG 批处理：可扫描贴图引用，支持普通/LZMA/ENC/REZ phase 文本 CFG 解码，分类失败解码结果，并为二进制 RGB 条带型 CFG 生成预览。
 

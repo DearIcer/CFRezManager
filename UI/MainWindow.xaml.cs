@@ -329,6 +329,11 @@ public partial class MainWindow : Window
             ["CopyNameFailed"] = ("\u590d\u5236\u540d\u79f0\u5931\u8d25", "Copy name failed"),
             ["CopyNameClipboardBusy"] = ("\u526a\u8d34\u677f\u6b63\u88ab\u5176\u4ed6\u7a0b\u5e8f\u5360\u7528\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002", "Clipboard is busy. Please try again."),
             ["DecodeBank"] = ("\u89e3\u7801 BANK...", "Decode BANK..."),
+            ["ExportBankAudio"] = ("导出 BANK 音频 (WAV)...", "Export BANK Audio (WAV)..."),
+            ["ExportingBankAudio"] = ("正在导出 BANK 音频 {0}...", "Exporting BANK audio {0}..."),
+            ["ExportingBankAudioProgress"] = ("正在导出音频 {0:N0}/{1:N0}: {2}", "Exporting audio {0:N0}/{1:N0}: {2}"),
+            ["ExportedBankAudioResult"] = ("已导出 {0:N0} 个 WAV 到 {1}（失败 {2:N0} 个）", "Exported {0:N0} WAV files to {1} ({2:N0} failed)"),
+            ["ExportBankAudioFailed"] = ("导出 BANK 音频失败", "BANK audio export failed"),
             ["ExportObj"] = ("\u5bfc\u51fa OBJ...", "Export OBJ..."),
             ["SaveObjTitle"] = ("\u4fdd\u5b58 OBJ \u6a21\u578b", "Save OBJ model"),
             ["ObjFileFilter"] = ("OBJ \u6a21\u578b (*.obj)|*.obj|\u6240\u6709\u6587\u4ef6 (*.*)|*.*", "OBJ models (*.obj)|*.obj|All files (*.*)|*.*"),
@@ -805,6 +810,17 @@ public partial class MainWindow : Window
         await DecodeBankAsync(selectedItems[0]);
     }
 
+    private async void ExportBankAudioMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        List<ExplorerItem> selectedItems = GetSelectedExplorerItems();
+        if (selectedItems.Count != 1 || !FmodBankDecoder.IsCandidate(selectedItems[0].FileExtension))
+        {
+            return;
+        }
+
+        await ExportBankAudioAsync(selectedItems[0]);
+    }
+
     private async void ExportObjMenuItem_Click(object sender, RoutedEventArgs e)
     {
         List<ExplorerItem> selectedItems = GetSelectedExplorerItems();
@@ -992,6 +1008,52 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             ShowError("DecodeBankFailed", ex);
+        }
+        finally
+        {
+            SetBusy(false, keepSearchEnabled: true);
+        }
+    }
+
+    private async Task ExportBankAudioAsync(ExplorerItem item)
+    {
+        string? outputDirectory = SelectFolder(T("SelectOutputFolderDescription"), FolderDialogKind.Output, _selectedDirectory);
+        if (outputDirectory is null)
+        {
+            return;
+        }
+
+        SetBusy(true, keepSearchEnabled: true);
+
+        try
+        {
+            WorkProgress.IsIndeterminate = true;
+            SetStatus("ExportingBankAudio", item.Name);
+
+            var progress = new Progress<FmodBankAudioExportProgress>(state =>
+            {
+                if (WorkProgress.IsIndeterminate)
+                {
+                    WorkProgress.IsIndeterminate = false;
+                    WorkProgress.Minimum = 0;
+                    WorkProgress.Maximum = state.Total;
+                }
+
+                WorkProgress.Value = state.Completed;
+                SetStatus("ExportingBankAudioProgress", state.Completed, state.Total, state.StreamName);
+            });
+
+            FmodBankAudioExportResult result = await Task.Run(() =>
+            {
+                byte[] data = ReadExplorerFileBytes(item, FmodBankDecoder.MaxSourceBytes);
+                return FmodBankAudioExporter.ExportStreamsToWave(data, item.Name, outputDirectory, progress);
+            });
+
+            SetStatus("ExportedBankAudioResult", result.ExportedCount, outputDirectory, result.FailedCount);
+        }
+        catch (Exception ex)
+        {
+            ShowError("ExportBankAudioFailed", ex);
         }
         finally
         {
@@ -2701,6 +2763,9 @@ public partial class MainWindow : Window
         DecodeBankMenuItem.Visibility = bankItem is null ? Visibility.Collapsed : Visibility.Visible;
         DecodeBankMenuItem.IsEnabled = !_isBusy && bankItem is not null;
         DecodeBankMenuItem.Header = T("DecodeBank");
+        ExportBankAudioMenuItem.Visibility = bankItem is null ? Visibility.Collapsed : Visibility.Visible;
+        ExportBankAudioMenuItem.IsEnabled = !_isBusy && bankItem is not null;
+        ExportBankAudioMenuItem.Header = T("ExportBankAudio");
         bool canExportObj = selectedItems.Count > 0 &&
                             selectedItems.Any(item => item.IsContainer || item.IsModelPreviewCandidate);
         ExportObjMenuItem.Visibility = canExportObj ? Visibility.Visible : Visibility.Collapsed;
@@ -2712,6 +2777,7 @@ public partial class MainWindow : Window
         ExportFbxMenuItem.Header = T("ExportFbx");
         PreviewMenuSeparator.Visibility = OpenPreviewMenuItem.Visibility == Visibility.Visible ||
                                           DecodeBankMenuItem.Visibility == Visibility.Visible ||
+                                          ExportBankAudioMenuItem.Visibility == Visibility.Visible ||
                                           ExportObjMenuItem.Visibility == Visibility.Visible ||
                                           ExportFbxMenuItem.Visibility == Visibility.Visible
             ? Visibility.Visible
@@ -3237,6 +3303,7 @@ public partial class MainWindow : Window
         UpdateEmptyStateText();
         OpenPreviewMenuItem.Header = T("OpenPreview");
         DecodeBankMenuItem.Header = T("DecodeBank");
+        ExportBankAudioMenuItem.Header = T("ExportBankAudio");
         ExportObjMenuItem.Header = T("ExportObj");
         ExportFbxMenuItem.Header = T("ExportFbx");
         LocateFileMenuItem.Header = T("LocateFile");

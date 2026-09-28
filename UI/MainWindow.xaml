@@ -445,6 +445,9 @@
                                 <MenuItem x:Name="DecodeBankMenuItem"
                                           Header="Decode BANK..."
                                           Click="DecodeBankMenuItem_Click"/>
+                                <MenuItem x:Name="ExportBankAudioMenuItem"
+                                          Header="导出 BANK 音频 (WAV)..."
+                                          Click="ExportBankAudioMenuItem_Click"/>
                                 <MenuItem x:Name="ExportObjMenuItem"
                                           Header="Export OBJ..."
                                           Click="ExportObjMenuItem_Click"/>

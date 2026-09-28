@@ -101,6 +101,7 @@ Common right-click actions:
 - `Copy Name`: copy one or more selected item names.
 - `Extract This Item...` / `Extract N Selected Items...`: export selected files, folders, or REZ entries.
 - `Decode BANK...`: export a decoded bank and raw FSB5 audio blocks.
+- `Export BANK Audio (WAV)...`: decode every audio stream in a BANK and export it as a PCM WAV file.
 
 ## Preview Support
 

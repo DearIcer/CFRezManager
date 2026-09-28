@@ -193,6 +193,124 @@ internal static class FmodBankAudioPreviewDocumentFactory
         return false;
     }
 
+    public static bool TryDecodeStreamToWaveData(
+        FmodBankAudioSource source,
+        int streamIndex,
+        out byte[]? waveData,
+        out string streamName,
+        out string? errorMessage)
+    {
+        waveData = null;
+        streamName = string.Empty;
+        errorMessage = null;
+
+        if (!TryResolveStream(source, streamIndex, out FmodBankFsbBlock? block, out int localStreamIndex))
+        {
+            errorMessage = $"BANK stream index is out of range: {streamIndex + 1}.";
+            return false;
+        }
+
+        streamName = ResolveStreamName(block, localStreamIndex);
+        string? oggError = null;
+        if (TryRebuildWithFmod5Sharp(
+                source,
+                block,
+                localStreamIndex,
+                streamIndex,
+                out byte[]? rebuiltData,
+                out string? extension,
+                out streamName,
+                out string? fmodError) &&
+            rebuiltData is not null)
+        {
+            if (string.Equals(extension, "wav", StringComparison.OrdinalIgnoreCase))
+            {
+                waveData = rebuiltData;
+                return true;
+            }
+
+            if (string.Equals(extension, "ogg", StringComparison.OrdinalIgnoreCase) &&
+                OggVorbisWaveDecoder.TryDecodeToWaveBytes(rebuiltData, out byte[] oggWaveData, out oggError))
+            {
+                waveData = oggWaveData;
+                return true;
+            }
+
+            fmodError = string.IsNullOrWhiteSpace(oggError)
+                ? $"BANK stream {streamIndex + 1:N0} rebuilt to an unsupported format."
+                : $"BANK stream {streamIndex + 1:N0} Ogg to WAVE conversion failed: {oggError}";
+        }
+
+        if (!TryResolveVgmstream(out string? vgmstreamPath) || string.IsNullOrWhiteSpace(vgmstreamPath))
+        {
+            errorMessage = string.IsNullOrWhiteSpace(fmodError)
+                ? "BANK stream codec is not supported by the built-in decoder, and vgmstream-cli.exe was not found."
+                : $"{fmodError} vgmstream-cli.exe was not found for fallback.";
+            return false;
+        }
+
+        if (TryDecodeStreamToWaveWithVgmstream(source, block, localStreamIndex, vgmstreamPath, out waveData, out errorMessage))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fmodError) && !string.IsNullOrWhiteSpace(errorMessage))
+        {
+            errorMessage = $"{fmodError} Fallback failed: {errorMessage}";
+        }
+
+        return false;
+    }
+
+    private static bool TryDecodeStreamToWaveWithVgmstream(
+        FmodBankAudioSource source,
+        FmodBankFsbBlock block,
+        int localStreamIndex,
+        string vgmstreamPath,
+        out byte[]? waveData,
+        out string? errorMessage)
+    {
+        waveData = null;
+        errorMessage = null;
+
+        string fsbPath = AudioPreviewDocumentFactory.CreateTemporaryAudioPath("fsb");
+        string wavPath = AudioPreviewDocumentFactory.CreateTemporaryAudioPath("wav");
+        try
+        {
+            if (!TryCreateFsbDataForStream(
+                    source,
+                    block,
+                    localStreamIndex,
+                    out byte[]? fsbData,
+                    out int fsbStreamIndex,
+                    out _,
+                    out errorMessage) ||
+                fsbData is null)
+            {
+                return false;
+            }
+
+            File.WriteAllBytes(fsbPath, fsbData);
+            if (!RunVgmstream(vgmstreamPath, fsbPath, wavPath, fsbStreamIndex, out errorMessage))
+            {
+                return false;
+            }
+
+            waveData = File.ReadAllBytes(wavPath);
+            return waveData.Length > 0;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
+        finally
+        {
+            AudioPreviewDocumentFactory.TryDeleteFile(fsbPath);
+            AudioPreviewDocumentFactory.TryDeleteFile(wavPath);
+        }
+    }
+
     public static bool TryGetRequiredDecodedByteCount(
         FmodBankAudioSource source,
         int streamIndex,
